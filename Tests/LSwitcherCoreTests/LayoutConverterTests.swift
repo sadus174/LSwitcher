@@ -1,6 +1,7 @@
 import LSwitcherCore
 import Foundation
 import Dispatch
+import CryptoKit
 
 if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--storage=") }) {
     let start = DispatchTime.now().uptimeNanoseconds
@@ -36,6 +37,36 @@ let coldLoadMilliseconds = Double(DispatchTime.now().uptimeNanoseconds-coldStart
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else { fatalError(message) }
 }
+let signingKey = Curve25519.Signing.PrivateKey()
+let hash = String(repeating: "a", count: 64)
+let unsigned = UpdatePackage(version: "0.4.0", architecture: UpdatePackage.architecture,
+    filename: "LSwitcher-0.4.0-\(UpdatePackage.architecture).zip", bytes: 123, sha256: hash, signature: "")
+let signature = try signingKey.signature(for: unsigned.message).base64EncodedString()
+let signed = UpdatePackage(version: unsigned.version, architecture: unsigned.architecture,
+    filename: unsigned.filename, bytes: unsigned.bytes, sha256: unsigned.sha256, signature: signature)
+try signed.validate(current: "0.3.1", publicKey: signingKey.publicKey.rawRepresentation)
+func rejected(_ package: UpdatePackage, current: String = "0.3.1", key: Data = signingKey.publicKey.rawRepresentation) -> Bool {
+    do { try package.validate(current: current, publicKey: key); return false } catch { return true }
+}
+expect(rejected(signed, current: "0.4.0"), "Do not reinstall same version")
+expect(rejected(signed, current: "1.0.0"), "Reject downgrade")
+expect(rejected(signed, key: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation), "Reject foreign signing key")
+expect(rejected(unsigned), "Reject missing signature")
+expect(rejected(UpdatePackage(version: "0.5.0", architecture: signed.architecture,
+    filename: "LSwitcher-0.5.0-\(signed.architecture).zip", bytes: signed.bytes, sha256: hash, signature: signature)), "Signature binds version")
+expect(rejected(UpdatePackage(version: signed.version, architecture: signed.architecture,
+    filename: "../payload.zip", bytes: signed.bytes, sha256: hash, signature: signature)), "Reject unsafe filename")
+expect(!UpdatePackage.validVersion("0.4.0-beta") && !UpdatePackage.validVersion("../0.4.0"), "Only stable numeric versions")
+let undo = CorrectionUndo(original: "ghbdtn", replacement: "привет", delimiter: " ", caret: 10, time: 10)
+expect(undo.matches(text: "👋 привет ", caret: 10, selectionLength: 0, time: 11), "Undo after emoji and correction")
+expect(undo.matches(text: "👋 Привет ", caret: 10, selectionLength: 0, time: 11), "Editor capitalization preserves safe undo")
+expect(!undo.matches(text: "👋 привет ", caret: 10, selectionLength: 0, time: 16), "Undo expires")
+expect(!undo.matches(text: "👋 привет ", caret: 8, selectionLength: 0, time: 11), "Moved caret cannot undo")
+expect(!undo.matches(text: "👋 привет ", caret: 10, selectionLength: 1, time: 11), "Selected text cannot undo")
+expect(!undo.matches(text: "👋 другая ", caret: 10, selectionLength: 0, time: 11), "Changed suffix cannot undo")
+expect(!undo.matches(text: "hello", caret: 999, selectionLength: 0, time: 11), "Invalid undo range")
+let personal = PersonalWords.normalized("  Ghbdtn \nHELLO\nhello\nнесколько слов\n")
+expect(personal.count == 2 && PersonalWords.contains("GHBDTN", in: personal), "Explicit personal words normalize and deduplicate")
 expect(LayoutConverter.convert("Ghbdtn") == "Привет", "English to Russian, mixed case")
 expect(LayoutConverter.convert("Руддщ") == "Hello", "Russian to English, mixed case")
 expect(LayoutConverter.convert("ghbdtn vbh") == "привет мир", "Multiple words")

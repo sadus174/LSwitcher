@@ -8,6 +8,7 @@ let package = Package(
     targets: [
         .target(name: "LSwitcherCore", resources: [.copy("Resources/Lexicon.lzfse"), .copy("Resources/ThirdPartyNotices.txt")]),
         .executableTarget(name: "LSwitcher", dependencies: ["LSwitcherCore"]),
+        .executableTarget(name: "LSwitcherUpdater", dependencies: ["LSwitcherCore"]),
         .executableTarget(name: "LSwitcherChecks", dependencies: ["LSwitcherCore"], path: "Tests/LSwitcherCoreTests")
     ]
 )
