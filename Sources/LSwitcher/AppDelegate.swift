@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import Carbon
+import LSwitcherCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var enabledItem: NSMenuItem!
     private var autoItem: NSMenuItem!
+    private var defaultStatusImage: NSImage?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -28,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         image.isTemplate = true
+        defaultStatusImage = image
         statusItem.button?.image = image
         let menu = NSMenu()
         menu.addItem(withTitle: "LSwitcher", action: nil, keyEquivalent: "")
@@ -42,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         model.changed = { [weak self] in self?.refreshMenu() }
         refreshMenu()
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(layoutChanged),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
         showSettings()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(applicationChanged),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
@@ -73,8 +79,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enabledItem?.state = model.enabled ? .on : .off
         autoItem?.state = model.automatic ? .on : .off
         statusItem?.button?.appearsDisabled = !model.enabled || !model.ready
-        statusItem?.button?.toolTip = model.ready ? "LSwitcher · Shift × 2" : "LSwitcher · Проверьте разрешения"
+        guard let button = statusItem?.button else { return }
+        let layout = CurrentLayout.presentation
+        switch model.statusIconStyle {
+        case .arrows:
+            statusItem.length = 30
+            button.title = ""; button.image = defaultStatusImage
+        case .code:
+            statusItem.length = NSStatusItem.variableLength
+            button.image = nil; button.title = layout.code
+            button.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        case .flag:
+            statusItem.length = 30
+            button.image = nil; button.title = layout.flag
+            button.font = .systemFont(ofSize: 17)
+        }
+        button.setAccessibilityLabel("LSwitcher · \(layout.code)")
+        button.toolTip = model.ready ? "LSwitcher · \(layout.code) · Shift × 2" : "LSwitcher · \(layout.code) · Проверьте разрешения"
     }
+    @objc private func layoutChanged() { refreshMenu(); model.focusHint.refresh() }
     @objc private func willSleep() { model.engine.suspend(); model.focusHint.setAllowed(false) }
     @objc private func didWake() { model.engine.reset(); model.retry() }
     @objc private func applicationChanged() { model.engine.reset(); model.focusHint.reset(); AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication) }

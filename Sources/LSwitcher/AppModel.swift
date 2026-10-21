@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
     @Published var testEditorID = "com.apple.TextEdit"
     @Published var enabled = Preferences.shared.enabled
     @Published var automatic = Preferences.shared.automatic
+    @Published var statusIconStyle = Preferences.shared.statusIconStyle
     @Published var showLayoutHint = Preferences.shared.showLayoutHint
     @Published var shiftMode = Preferences.shared.shiftMode
     @Published var neverCorrect = Preferences.shared.neverCorrect
@@ -59,6 +60,9 @@ final class AppModel: ObservableObject {
     func retry() { engine.start(); refresh() }
     func setEnabled(_ value: Bool) {
         enabled = value; Preferences.shared.enabled = value; engine.reset(); refresh()
+    }
+    func setStatusIconStyle(_ value: StatusIconStyle) {
+        statusIconStyle = value; Preferences.shared.statusIconStyle = value; changed?()
     }
     func setShowLayoutHint(_ value: Bool) {
         showLayoutHint = value; Preferences.shared.showLayoutHint = value; refresh()

@@ -139,17 +139,5 @@ final class FocusLayoutHint {
               dimensions.width > 0, dimensions.height > 0 else { return nil }
         return CGRect(origin: point, size: dimensions)
     }
-    static func currentSymbol() -> String {
-        guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
-              let pointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages) else { return "⌨" }
-        let languages = Unmanaged<CFArray>.fromOpaque(pointer).takeUnretainedValue() as NSArray
-        let language = (languages.firstObject as? String ?? "").lowercased()
-        if language.hasPrefix("ru") { return "🇷🇺" }
-        if language.hasPrefix("en") {
-            if let id = TISGetInputSourceProperty(source, kTISPropertyInputSourceID),
-               (Unmanaged<CFString>.fromOpaque(id).takeUnretainedValue() as String).lowercased().contains("british") { return "🇬🇧" }
-            return "🇺🇸"
-        }
-        return language.isEmpty ? "⌨" : String(language.prefix(2)).uppercased()
-    }
+    static func currentSymbol() -> String { CurrentLayout.presentation.flag }
 }

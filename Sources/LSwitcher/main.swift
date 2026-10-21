@@ -18,6 +18,10 @@ final class Preferences {
         get { defaults.object(forKey: "enabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "enabled") }
     }
+    var statusIconStyle: StatusIconStyle {
+        get { StatusIconStyle(rawValue: defaults.string(forKey: "statusIconStyle") ?? "") ?? .arrows }
+        set { defaults.set(newValue.rawValue, forKey: "statusIconStyle") }
+    }
     var showLayoutHint: Bool {
         get { defaults.object(forKey: "showLayoutHint") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "showLayoutHint") }

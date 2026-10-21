@@ -37,6 +37,12 @@ let coldLoadMilliseconds = Double(DispatchTime.now().uptimeNanoseconds-coldStart
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else { fatalError(message) }
 }
+expect(LayoutPresentation(language: "ru-RU", sourceID: "").code == "RU", "Russian status code")
+expect(LayoutPresentation(language: "en", sourceID: "com.apple.keylayout.British").flag == "🇬🇧", "British keyboard flag")
+expect(LayoutPresentation(language: "en", sourceID: "com.apple.keylayout.US").flag == "🇺🇸", "English keyboard flag")
+expect(LayoutPresentation(language: "", sourceID: "").code == "—", "Unknown keyboard fallback")
+expect(LayoutPresentation(language: "de-DE", sourceID: "").code == "DE", "Other language status code")
+expect(StatusIconStyle(rawValue: "invalid") == nil && StatusIconStyle.allCases.count == 3, "Three supported menu styles")
 var hint = FocusHintState()
 expect(hint.shouldShow(focusChanged: true), "Show hint before typing")
 hint.didType()

@@ -165,6 +165,14 @@ struct SettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             card {
+                rowTitle("Значок в строке меню", subtitle: "Стрелки, код текущей раскладки или флаг. Обновляется при переключении языка.", symbol: "menubar.rectangle")
+                Picker("Значок в строке меню", selection: Binding(get: { model.statusIconStyle }, set: model.setStatusIconStyle)) {
+                    Text("По умолчанию · ⇄").tag(StatusIconStyle.arrows)
+                    Text("Код · RU / EN").tag(StatusIconStyle.code)
+                    Text("Флаг · 🇷🇺 / 🇺🇸").tag(StatusIconStyle.flag)
+                }.pickerStyle(.segmented)
+            }
+            card {
                 HStack {
                     rowTitle("Флаг раскладки у поля", subtitle: "Маленькая подсказка при получении фокуса. Исчезает с началом ввода и не перехватывает нажатия.", symbol: "flag")
                     Spacer()
