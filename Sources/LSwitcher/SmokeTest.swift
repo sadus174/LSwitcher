@@ -86,6 +86,29 @@ extension AppModel {
                 guard !focusHint.visible else { throw SmokeFailure.message("Флаг не скрылся при вводе") }
                 testResults += "✓ Флаг скрывается после первого ввода\n"; checks += 1
 
+                guard let delegate = NSApp.delegate as? AppDelegate else { throw SmokeFailure.message("Нет делегата приложения") }
+                for (sleep, wake, name) in [
+                    (NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, "сон/пробуждение"),
+                    (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, "блокировка/разблокировка")
+                ] {
+                    let handler = engine.generation, status = delegate.statusGeneration
+                    NSWorkspace.shared.notificationCenter.post(name: sleep, object: nil)
+                    checkHealth()
+                    guard !engine.running, sessionSuspended, engine.generation == handler else {
+                        throw SmokeFailure.message("Обработчик не остановился на время сна")
+                    }
+                    NSWorkspace.shared.notificationCenter.post(name: wake, object: nil)
+                    guard engine.running, !sessionSuspended, engine.generation > handler,
+                          delegate.statusGeneration > status, delegate.statusItemPresent else {
+                        throw SmokeFailure.message("Не восстановились обработчик и значок")
+                    }
+                    testResults += "✓ Восстановление: \(name)\n"; checks += 1
+                }
+                engine.stop()
+                checkHealth()
+                guard engine.running else { throw SmokeFailure.message("Контроль состояния не восстановил обработчик") }
+                testResults += "✓ Автовосстановление недействующего обработчика\n"; checks += 1
+
                 try await clear(field)
                 try await type("ghbdtn", field: field)
                 try await shiftPair(right: true, field: field)

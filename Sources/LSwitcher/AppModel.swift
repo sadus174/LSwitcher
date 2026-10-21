@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 import LSwitcherCore
+import Carbon
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -23,6 +24,9 @@ final class AppModel: ObservableObject {
     @Published var listening = false
     @Published var posting = false
     @Published var running = false
+    @Published var secureInput = false
+    @Published private(set) var sessionSuspended = false
+    @Published var handlerGeneration = 0
     @Published var events = 0
     @Published var shiftEvents = 0
     @Published var manualCount = 0
@@ -30,7 +34,7 @@ final class AppModel: ObservableObject {
     @Published var diagnostic = "Ожидание ввода"
     private var timer: Timer?
     var changed: (() -> Void)?
-    var ready: Bool { accessibility && posting && running }
+    var ready: Bool { accessibility && listening && posting && running && !sessionSuspended && !secureInput }
 
     init() {
         _ = LayoutConverter.prepareLexicon()
@@ -39,12 +43,16 @@ final class AppModel: ObservableObject {
         engine.typingObserved = { [weak self] in self?.focusHint.didType() }
         engine.start()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+        let healthTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkHealth() }
         }
+        timer = healthTimer
+        RunLoop.main.add(healthTimer, forMode: .common)
     }
 
     func refresh() {
+        secureInput = IsSecureEventInputEnabled()
+        handlerGeneration = engine.generation
         accessibility = AXIsProcessTrusted()
         listening = CGPreflightListenEventAccess()
         posting = CGPreflightPostEventAccess()
@@ -54,10 +62,26 @@ final class AppModel: ObservableObject {
         manualCount = engine.manualCorrections
         autoCount = engine.automaticCorrections
         diagnostic = engine.diagnostic
-        focusHint.setAllowed(enabled && showLayoutHint && accessibility && listening && running)
+        focusHint.setAllowed(enabled && showLayoutHint && ready)
         changed?()
     }
-    func retry() { engine.start(); refresh() }
+    func checkHealth() {
+        if !sessionSuspended, AXIsProcessTrusted(), CGPreflightListenEventAccess(), CGPreflightPostEventAccess(), !IsSecureEventInputEnabled() {
+            engine.repairIfNeeded()
+        }
+        refresh()
+    }
+    func suspendInput() {
+        sessionSuspended = true; engine.suspend(); focusHint.setAllowed(false); refresh()
+    }
+    func resumeInput() {
+        sessionSuspended = false
+        AccessibilityFocus.resetPreparation()
+        engine.rebuild(); focusHint.reset()
+        AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication)
+        refresh()
+    }
+    func retry() { guard !sessionSuspended else { return }; engine.rebuild(); refresh() }
     func setEnabled(_ value: Bool) {
         enabled = value; Preferences.shared.enabled = value; engine.reset(); refresh()
     }

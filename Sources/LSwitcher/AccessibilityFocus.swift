@@ -4,15 +4,18 @@ import AppKit
 
 enum AccessibilityFocus {
     @MainActor private static var preparedChromium = Set<pid_t>()
+    @MainActor static func resetPreparation() { preparedChromium.removeAll() }
     @MainActor static func prepare(_ app: NSRunningApplication?) {
         guard AXIsProcessTrusted(), let app, app.processIdentifier > 0,
               ["com.google.Chrome", "org.chromium.Chromium", "com.microsoft.edgemac", "com.brave.Browser"].contains(app.bundleIdentifier ?? ""),
-              preparedChromium.insert(app.processIdentifier).inserted else { return }
+              !preparedChromium.contains(app.processIdentifier) else { return }
         let root = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(root, 0.1)
         // Chromium's supported assistive-technology activation signal. It can
         // take two seconds to expose focused web fields after the first request.
-        AXUIElementSetAttributeValue(root, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        if AXUIElementSetAttributeValue(root, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue) == .success {
+            preparedChromium.insert(app.processIdentifier)
+        }
     }
 
     /// Resolve actual keyboard focus rather than relying exclusively on a cached

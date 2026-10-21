@@ -11,12 +11,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var enabledItem: NSMenuItem!
     private var autoItem: NSMenuItem!
     private var defaultStatusImage: NSImage?
+    private var recoveryTask: Task<Void, Never>?
+    private(set) var statusGeneration = 1
+    var statusItemPresent: Bool { statusItem?.isVisible == true && statusItem?.button != nil && statusItem?.menu != nil }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installEditMenu()
         model = AppModel()
         statusItem = NSStatusBar.system.statusItem(withLength: 30)
+        statusItem.autosaveName = "LSwitcher.StatusItem"
+        statusItem.isVisible = true
         let image = NSImage(size: NSSize(width: 22, height: 19), flipped: false) { _ in
             NSColor.black.setStroke()
             let path = NSBezierPath()
@@ -49,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(layoutChanged),
             name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
         showSettings()
+        NotificationCenter.default.addObserver(self, selector: #selector(screenChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(systemAppLaunched), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(applicationChanged),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
@@ -58,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: name, object: nil)
         }
     }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showSettings(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { recreateStatusItem(); model.retry(); showSettings(); return true }
     private func installEditMenu() {
         let menu = NSMenu()
         let appItem = NSMenuItem()
@@ -98,8 +105,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.toolTip = model.ready ? "LSwitcher · \(layout.code) · Shift × 2" : "LSwitcher · \(layout.code) · Проверьте разрешения"
     }
     @objc private func layoutChanged() { refreshMenu(); model.focusHint.refresh() }
-    @objc private func willSleep() { model.engine.suspend(); model.focusHint.setAllowed(false) }
-    @objc private func didWake() { model.engine.reset(); model.retry() }
+    private func recreateStatusItem() {
+        let menu = statusItem?.menu
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        statusItem = NSStatusBar.system.statusItem(withLength: 30)
+        statusItem.autosaveName = "LSwitcher.StatusItem"
+        statusItem.isVisible = true
+        statusItem.menu = menu
+        statusGeneration += 1
+        refreshMenu()
+    }
+    @objc private func willSleep() {
+        recoveryTask?.cancel(); recoveryTask = nil
+        model.suspendInput()
+    }
+    @objc private func didWake() {
+        recoveryTask?.cancel()
+        model.resumeInput()
+        recreateStatusItem()
+        recoveryTask = Task { @MainActor [weak self] in
+            for (index, delay) in [0.5, 1.5, 4.0].enumerated() {
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                guard let self, !self.model.sessionSuspended else { return }
+                self.model.checkHealth()
+                AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication)
+                if index == 1 { self.recreateStatusItem() }
+                else { self.refreshMenu() }
+            }
+        }
+    }
+    @objc private func screenChanged() { if !model.sessionSuspended { recreateStatusItem() } }
+    @objc private func systemAppLaunched(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == "com.apple.systemuiserver" else { return }
+        recreateStatusItem()
+    }
     @objc private func applicationChanged() { model.engine.reset(); model.focusHint.reset(); AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication) }
     @objc private func toggleEnabled() { model.setEnabled(!model.enabled) }
     @objc private func toggleAutomatic() { model.setAutomatic(!model.automatic) }

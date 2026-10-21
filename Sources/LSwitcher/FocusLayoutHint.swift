@@ -65,7 +65,7 @@ final class FocusLayoutHint {
     private func hide() { if panel.isVisible { panel.orderOut(nil) }; visible = false }
 
     func refresh() {
-        guard Preferences.shared.enabled, Preferences.shared.showLayoutHint, AXIsProcessTrusted(),
+        guard timer != nil, Preferences.shared.enabled, Preferences.shared.showLayoutHint, AXIsProcessTrusted(),
               !IsSecureEventInputEnabled(), let app = NSWorkspace.shared.frontmostApplication,
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
               !(app.bundleIdentifier ?? "").hasPrefix("com.1password."),

@@ -75,7 +75,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
                     Circle().fill(model.ready ? Color.green : Color.orange).frame(width: 6, height: 6)
-                    Text(model.ready ? (model.enabled ? "Готов к работе" : "На паузе") : "Нужен доступ")
+                    Text(model.secureInput ? "Защищённый ввод" : model.sessionSuspended ? "Сессия приостановлена" : model.ready ? (model.enabled ? "Готов к работе" : "На паузе") : "Нужен доступ")
                         .font(.system(size: 12, weight: .medium))
                 }
                 Text("Русский ⇄ English").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -290,6 +290,12 @@ struct SettingsView: View {
                     Text(model.testResults).font(.system(size: 11, design: .monospaced))
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
+            }
+            Text("Поколение обработчика: \(model.handlerGeneration). После сна обработчик создаётся заново; состояние автоматически проверяется раз в секунду.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            if model.secureInput {
+                Label("macOS включила Secure Input. Переключение временно недоступно; после выхода из защищённого ввода работа возобновится.", systemImage: "lock.shield")
+                    .font(.system(size: 11)).foregroundStyle(.orange)
             }
             Label("Все настройки и обработка — на вашем Mac", systemImage: "internaldrive").font(.system(size: 11)).foregroundStyle(.secondary)
         }

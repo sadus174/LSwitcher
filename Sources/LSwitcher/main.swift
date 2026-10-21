@@ -57,6 +57,9 @@ final class KeyboardEngine {
     private var lastPID: pid_t = 0
     private var doubleShift = DoubleShiftDetector()
     private var leftDoubleShift = DoubleShiftDetector()
+    private(set) var generation = 0
+    private var lastRepair: TimeInterval = -100
+    private var suspended = false
     private(set) var eventsReceived = 0
     private(set) var shiftEvents = 0
     private(set) var manualCorrections = 0
@@ -64,11 +67,30 @@ final class KeyboardEngine {
     private(set) var diagnostic = "Ожидание ввода"
     var statusChanged: (() -> Void)?
     var typingObserved: (() -> Void)?
-    var running: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+    var running: Bool {
+        guard let tap, let runLoopSource else { return false }
+        return CFMachPortIsValid(tap) && CFRunLoopSourceIsValid(runLoopSource) && CGEvent.tapIsEnabled(tap: tap)
+    }
+    func stop() {
+        reset()
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes); CFRunLoopSourceInvalidate(runLoopSource) }
+        runLoopSource = nil; tap = nil
+    }
+    func rebuild() { stop(); start() }
+    func repairIfNeeded() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !suspended, !running, now - lastRepair >= 2 else { return }
+        lastRepair = now; rebuild()
+    }
 
     func start() {
-        if let tap, !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
-        guard tap == nil, AXIsProcessTrusted() else { statusChanged?(); return }
+        suspended = false
+        guard AXIsProcessTrusted(), CGPreflightListenEventAccess(), CGPreflightPostEventAccess() else {
+            stop(); statusChanged?(); return
+        }
+        if running { statusChanged?(); return }
+        stop()
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.leftMouseDown.rawValue)
             | (1 << CGEventType.rightMouseDown.rawValue) | (1 << CGEventType.otherMouseDown.rawValue)
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
@@ -86,6 +108,7 @@ final class KeyboardEngine {
         if let tap {
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
             runLoopSource = source
+            generation += 1
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
         }
@@ -95,14 +118,14 @@ final class KeyboardEngine {
     func reset() { word = ""; protectedToken = false; undo = nil; undoElement = nil; focusedElement = nil; doubleShift.cancel(); leftDoubleShift.cancel() }
 
     func suspend() {
-        reset()
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        suspended = true
+        stop()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             reset()
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            DispatchQueue.main.async { [weak self] in self?.repairIfNeeded() }
             return Unmanaged.passUnretained(event)
         }
         guard event.getIntegerValueField(.eventSourceUserData) != injectedEventTag else {
@@ -148,8 +171,10 @@ final class KeyboardEngine {
                     // Release the event tap before making cross-process Accessibility calls.
                     DispatchQueue.main.async { [weak self] in
                         guard let self, Preferences.shared.enabled, !IsSecureEventInputEnabled(),
-                              NSWorkspace.shared.frontmostApplication?.isEqual(app) == true,
-                              let element = self.focusedInput(for: app) else { return }
+                              let current = NSWorkspace.shared.frontmostApplication,
+                              current.bundleIdentifier == app.bundleIdentifier,
+                              (app.processIdentifier <= 0 || current.processIdentifier <= 0 || current.processIdentifier == app.processIdentifier),
+                              let element = self.focusedInput(for: current) else { return }
                         self.correctManually(element: element)
                     }
                 }
