@@ -69,7 +69,7 @@ if args.count == 5, let pid = Int32(args[3]), pid > 1,
    args[4] == "--launch" || args[4] == "--test-no-launch" {
     do {
         try install(target: URL(fileURLWithPath: args[1]).standardizedFileURL,
-                    work: URL(fileURLWithPath: args[2]).standardizedFileURL, parent: pid, launch: args[4] == "--launch")
+                    work: URL(fileURLWithPath: args[2]).standardizedFileURL.resolvingSymlinksInPath(), parent: pid, launch: args[4] == "--launch")
     } catch {
         if args[4] == "--launch" {
             let alert = NSAlert()

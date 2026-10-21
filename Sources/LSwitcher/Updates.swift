@@ -6,7 +6,7 @@ import LSwitcherCore
 final class Updates: ObservableObject {
     static let repository = URL(string: "https://github.com/sadus174/LSwitcher")!
     static let releases = repository.appendingPathComponent("releases/latest")
-    static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.4.0" }
+    static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.4.1" }
     @Published private(set) var checking = false
     @Published private(set) var message = "Проверьте, доступна ли новая версия."
     @Published private(set) var available = false
@@ -80,7 +80,7 @@ final class Updates: ObservableObject {
             do {
                 let session = session()
                 defer { session.invalidateAndCancel() }
-                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("LSwitcher-update-\(UUID().uuidString)")
+                let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("LSwitcher-update-\(UUID().uuidString)")
                 directory = folder
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
                 let (temporary, response) = try await session.download(from: Self.asset(version: package.version, name: package.filename))
