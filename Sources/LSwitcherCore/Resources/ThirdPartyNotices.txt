@@ -1,0 +1,1409 @@
+LSwitcher lexicon — third-party attribution
+
+The modified combined dictionary is licensed CC BY-SA 4.0.
+Changes and source versions are also embedded in the binary dictionary metadata.
+
+
+[
+  {
+    "name": "FrequencyWords / OpenSubtitles 2018",
+    "author": "Hermit Dave; OpenSubtitles contributors; OPUS (Jörg Tiedemann)",
+    "url": "https://github.com/hermitdave/FrequencyWords",
+    "license": "CC-BY-SA-4.0"
+  },
+  {
+    "name": "wordfreq",
+    "author": "Luminoso Technologies, Inc.; Robyn Speer; contributors and underlying corpus authors",
+    "version": "3.1.1",
+    "url": "https://github.com/rspeer/wordfreq",
+    "license": "CC-BY-SA-4.0",
+    "credits": "See bundled ThirdPartyNotices.txt including upstream README and NOTICE, SUBTLEX and all underlying corpus credits."
+  },
+  {
+    "name": "OpenCorpora via pymorphy3-dicts-ru",
+    "author": "OpenCorpora contributors; Danylo Halaiko; Mikhail Korobov",
+    "version": "2.4.417150.4580142",
+    "revision": "417150",
+    "url": "https://opencorpora.org/",
+    "license": "CC-BY-SA-3.0; adapted resource distributed CC-BY-SA-4.0"
+  },
+  {
+    "name": "English Speller Database",
+    "author": "Kevin Atkinson and credited contributors",
+    "url": "https://github.com/en-wl/wordlist",
+    "license": "ESDB permissive license; full Copyright bundled",
+    "subset": "size 70, American and British, variant level 1"
+  }
+]
+
+FrequencyWords / OpenSubtitles 2018
+# FrequencyWords
+Repository for Frequency Word List Generator and processed files
+
+In early days I hosted the generated files on OneDrive with my blog https://invokeit.wordpress.com/frequency-word-lists/ linking to it.
+Moving forward, the code and the generated outputs are on GitHub.
+
+### OpenSubtitle tokenized source
+The data used to generate 2016 lists can be found at http://opus.lingfil.uu.se/OpenSubtitles2016.php 
+The data used to generate 2018 lists can be found at http://opus.nlpl.eu/OpenSubtitles2018.php
+
+### Format
+Frequency lists are on the `{word}{space}{numer_of_occurences_in_corpus}`. By example, in file `en_50k.txt` :
+```
+you 22484400
+i 19975318
+the 17594291
+to 13200962
+...
+```
+
+### Usages
+These data are reused by various widely used opensource projects, among which Wikipedia, input methods and autocomplete keyoards, etc.
+
+### License 
+MIT License for code.<br>
+CC-by-sa-4.0 for content.
+
+
+wordfreq: upstream credits and normalization requirements
+wordfreq is a Python library for looking up the frequencies of words in many
+languages, based on many sources of data.
+
+The word frequencies are a snapshot of language usage through about 2021. I may
+continue to make packaging updates, but the data is unlikely to be updated again.
+The world where I had a reasonable way to collect reliable word frequencies is
+not the world we live in now. See [SUNSET.md](./SUNSET.md) for more information.
+
+Author: Robyn Speer
+
+## Installation
+
+wordfreq requires Python 3 and depends on a few other Python modules
+(msgpack, langcodes, and regex). You can install it and its dependencies
+in the usual way, either by getting it from pip:
+
+    pip3 install wordfreq
+
+or by getting the repository and installing it for development, using [poetry][]:
+
+    poetry install
+
+[poetry]: https://python-poetry.org/
+
+See [Additional CJK installation](#additional-cjk-installation) for extra
+steps that are necessary to get Chinese, Japanese, and Korean word frequencies.
+
+## Usage
+
+wordfreq provides access to estimates of the frequency with which a word is
+used, in over 40 languages (see *Supported languages* below). It uses many
+different data sources, not just one corpus.
+
+It provides both 'small' and 'large' wordlists:
+
+- The 'small' lists take up very little memory and cover words that appear at
+  least once per million words.
+- The 'large' lists cover words that appear at least once per 100 million
+  words.
+
+The default list is 'best', which uses 'large' if it's available for the
+language, and 'small' otherwise.
+
+The most straightforward function for looking up frequencies is:
+
+    word_frequency(word, lang, wordlist='best', minimum=0.0)
+
+This function looks up a word's frequency in the given language, returning its
+frequency as a decimal between 0 and 1.
+
+    >>> from wordfreq import word_frequency
+    >>> word_frequency('cafe', 'en')
+    1.23e-05
+
+    >>> word_frequency('café', 'en')
+    5.62e-06
+
+    >>> word_frequency('cafe', 'fr')
+    1.51e-06
+
+    >>> word_frequency('café', 'fr')
+    5.75e-05
+
+`zipf_frequency` is a variation on `word_frequency` that aims to return the
+word frequency on a human-friendly logarithmic scale. The Zipf scale was
+proposed by Marc Brysbaert, who created the SUBTLEX lists. The Zipf frequency
+of a word is the base-10 logarithm of the number of times it appears per
+billion words. A word with Zipf value 6 appears once per thousand words, for
+example, and a word with Zipf value 3 appears once per million words.
+
+Reasonable Zipf values are between 0 and 8, but because of the cutoffs
+described above, the minimum Zipf value appearing in these lists is 1.0 for the
+'large' wordlists and 3.0 for 'small'. We use 0 as the default Zipf value
+for words that do not appear in the given wordlist, although it should mean
+one occurrence per billion words.
+
+    >>> from wordfreq import zipf_frequency
+    >>> zipf_frequency('the', 'en')
+    7.73
+
+    >>> zipf_frequency('word', 'en')
+    5.26
+
+    >>> zipf_frequency('frequency', 'en')
+    4.36
+
+    >>> zipf_frequency('zipf', 'en')
+    1.49
+
+    >>> zipf_frequency('zipf', 'en', wordlist='small')
+    0.0
+
+The parameters to `word_frequency` and `zipf_frequency` are:
+
+- `word`: a Unicode string containing the word to look up. Ideally the word
+  is a single token according to our tokenizer, but if not, there is still
+  hope -- see *Tokenization* below.
+
+- `lang`: the BCP 47 or ISO 639 code of the language to use, such as 'en'.
+
+- `wordlist`: which set of word frequencies to use. Current options are
+  'small', 'large', and 'best'.
+
+- `minimum`: If the word is not in the list or has a frequency lower than
+  `minimum`, return `minimum` instead. You may want to set this to the minimum
+  value contained in the wordlist, to avoid a discontinuity where the wordlist
+  ends.
+
+## Frequency bins
+
+wordfreq's wordlists are designed to load quickly and take up little space in
+the repository.  We accomplish this by avoiding meaningless precision and
+packing the words into frequency bins.
+
+In wordfreq, all words that have the same Zipf frequency rounded to the nearest
+hundredth have the same frequency. We don't store any more precision than that.
+So instead of having to store that the frequency of a word is
+.000011748975549395302, where most of those digits are meaningless, we just store
+the frequency bins and the words they contain.
+
+Because the Zipf scale is a logarithmic scale, this preserves the same relative
+precision no matter how far down you are in the word list. The frequency of any
+word is precise to within 1%.
+
+(This is not a claim about *accuracy*, but about *precision*. We believe that
+the way we use multiple data sources and discard outliers makes wordfreq a
+more accurate measurement of the way these words are really used in written
+language, but it's unclear how one would measure this accuracy.)
+
+## The figure-skating metric
+
+We combine word frequencies from different sources in a way that's designed
+to minimize the impact of outliers. The method reminds me of the scoring system
+in Olympic figure skating:
+
+- Find the frequency of each word according to each data source.
+- For each word, drop the sources that give it the highest and lowest frequency.
+- Average the remaining frequencies.
+- Rescale the resulting frequency list to add up to 1.
+
+## Numbers
+
+These wordlists would be enormous if they stored a separate frequency for every
+number, such as if we separately stored the frequencies of 484977 and 484978
+and 98.371 and every other 6-character sequence that could be considered a number.
+
+Instead, we have a frequency-bin entry for every number of the same "shape", such
+as `##` or `####` or `#.#####`, with `#` standing in for digits. (For compatibility
+with earlier versions of wordfreq, our stand-in character is actually `0`.) This
+is the same form of aggregation that the word2vec vocabulary does.
+
+Single-digit numbers are unaffected by this process; "0" through "9" have their own
+entries in each language's wordlist.
+
+When asked for the frequency of a token containing multiple digits, we multiply
+the frequency of that aggregated entry by a distribution estimating the frequency
+of those digits. The distribution only looks at two things:
+
+- The value of the first digit
+- Whether it is a 4-digit sequence that's likely to represent a year
+
+The first digits are assigned probabilities by Benford's law, and years are assigned
+probabilities from a distribution that peaks at the "present". I explored this in
+a Twitter thread at <https://twitter.com/r_speer/status/1493715982887571456>.
+
+The part of this distribution representing the "present" is not strictly a peak and
+doesn't move forward with time as the present does. Instead, it's a 20-year-long
+plateau from 2019 to 2039. (2019 is the last time Google Books Ngrams was updated,
+and 2039 is a time by which I will probably have figured out a new distribution.)
+
+Some examples:
+
+    >>> word_frequency("2022", "en")
+    5.15e-05
+    >>> word_frequency("1922", "en")
+    8.19e-06
+    >>> word_frequency("1022", "en")
+    1.28e-07
+
+Aside from years, the distribution does not care about the meaning of the numbers:
+
+    >>> word_frequency("90210", "en")
+    3.34e-10
+    >>> word_frequency("92222", "en")
+    3.34e-10
+    >>> word_frequency("802.11n", "en")
+    9.04e-13
+    >>> word_frequency("899.19n", "en")
+    9.04e-13
+
+The digit rule applies to other systems of digits, and only cares about the numeric
+value of the digits:
+
+    >>> word_frequency("٥٤", "ar")
+    6.64e-05
+    >>> word_frequency("54", "ar")
+    6.64e-05
+
+It doesn't know which language uses which writing system for digits:
+
+    >>> word_frequency("٥٤", "en")
+    5.4e-05
+
+## Sources and supported languages
+
+This data comes from a Luminoso project called [Exquisite Corpus][xc], whose
+goal is to download good, varied, multilingual corpus data, process it
+appropriately, and combine it into unified resources such as wordfreq.
+
+[xc]: https://github.com/LuminosoInsight/exquisite-corpus
+
+Exquisite Corpus compiles 8 different domains of text, some of which themselves
+come from multiple sources:
+
+- **Wikipedia**, representing encyclopedic text
+- **Subtitles**, from OPUS OpenSubtitles 2018 and SUBTLEX
+- **News**, from NewsCrawl 2014 and GlobalVoices
+- **Books**, from Google Books Ngrams 2012
+- **Web** text, from OSCAR
+- **Twitter**, representing short-form social media
+- **Reddit**, representing potentially longer Internet comments
+- **Miscellaneous** word frequencies: in Chinese, we import a free wordlist
+  that comes with the Jieba word segmenter, whose provenance we don't really
+  know
+
+The following languages are supported, with reasonable tokenization and at
+least 3 different sources of word frequencies:
+
+    Language    Code    #  Large?   WP    Subs  News  Books Web   Twit. Redd. Misc.
+    ──────────────────────────────┼────────────────────────────────────────────────
+    Arabic      ar      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Bangla      bn      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Bosnian     bs [1]  3  -      │ Yes   Yes   -     -     -     Yes   -     -
+    Bulgarian   bg      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Catalan     ca      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Chinese     zh [3]  7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   -     Jieba
+    Croatian    hr [1]  3         │ Yes   Yes   -     -     -     Yes   -     -
+    Czech       cs      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Danish      da      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Dutch       nl      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    English     en      7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   Yes   -
+    Finnish     fi      6  Yes    │ Yes   Yes   Yes   -     Yes   Yes   Yes   -
+    French      fr      7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   Yes   -
+    German      de      7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   Yes   -
+    Greek       el      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Hebrew      he      5  Yes    │ Yes   Yes   -     Yes   Yes   Yes   -     -
+    Hindi       hi      4  Yes    │ Yes   -     -     -     Yes   Yes   Yes   -
+    Hungarian   hu      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Icelandic   is      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Indonesian  id      3  -      │ Yes   Yes   -     -     -     Yes   -     -
+    Italian     it      7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   Yes   -
+    Japanese    ja      5  Yes    │ Yes   Yes   -     -     Yes   Yes   Yes   -
+    Korean      ko      4  -      │ Yes   Yes   -     -     -     Yes   Yes   -
+    Latvian     lv      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Lithuanian  lt      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Macedonian  mk      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Malay       ms      3  -      │ Yes   Yes   -     -     -     Yes   -     -
+    Norwegian   nb [2]  5  Yes    │ Yes   Yes   -     -     Yes   Yes   Yes   -
+    Persian     fa      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Polish      pl      6  Yes    │ Yes   Yes   Yes   -     Yes   Yes   Yes   -
+    Portuguese  pt      5  Yes    │ Yes   Yes   Yes   -     Yes   Yes   -     -
+    Romanian    ro      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Russian     ru      5  Yes    │ Yes   Yes   Yes   Yes   -     Yes   -     -
+    Slovak      sk      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Slovenian   sl      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Serbian     sr [1]  3  -      │ Yes   Yes   -     -     -     Yes   -     -
+    Spanish     es      7  Yes    │ Yes   Yes   Yes   Yes   Yes   Yes   Yes   -
+    Swedish     sv      5  Yes    │ Yes   Yes   -     -     Yes   Yes   Yes   -
+    Tagalog     fil     3  -      │ Yes   Yes   -     -     Yes   -     -     -
+    Tamil       ta      3  -      │ Yes   -     -     -     Yes   Yes   -     -
+    Turkish     tr      4  -      │ Yes   Yes   -     -     Yes   Yes   -     -
+    Ukrainian   uk      5  Yes    │ Yes   Yes   -     -     Yes   Yes   Yes   -
+    Urdu        ur      3  -      │ Yes   -     -     -     Yes   Yes   -     -
+    Vietnamese  vi      3  -      │ Yes   Yes   -     -     Yes   -     -     -
+
+[1] Bosnian, Croatian, and Serbian use the same underlying word list, because
+they share most of their vocabulary and grammar, they were once considered the
+same language, and language detection cannot distinguish them. This word list
+can also be accessed with the language code `sh`.
+
+[2] The Norwegian text we have is specifically written in Norwegian Bokmål, so
+we give it the language code 'nb' instead of the vaguer code 'no'. We would use
+'nn' for Nynorsk, but there isn't enough data to include it in wordfreq.
+
+[3] This data represents text written in both Simplified and Traditional
+Chinese, with primarily Mandarin Chinese vocabulary. See "Multi-script
+languages" below.
+
+Some languages provide 'large' wordlists, including words with a Zipf frequency
+between 1.0 and 3.0. These are available in 14 languages that are covered by
+enough data sources.
+
+## Other functions
+
+`tokenize(text, lang)` splits text in the given language into words, in the same
+way that the words in wordfreq's data were counted in the first place. See
+*Tokenization*.
+
+`top_n_list(lang, n, wordlist='best')` returns the most common *n* words in
+the list, in descending frequency order.
+
+    >>> from wordfreq import top_n_list
+    >>> top_n_list('en', 10)
+    ['the', 'to', 'and', 'of', 'a', 'in', 'i', 'is', 'for', 'that']
+
+    >>> top_n_list('es', 10)
+    ['de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'no', 'un']
+
+`iter_wordlist(lang, wordlist='best')` iterates through all the words in a
+wordlist, in descending frequency order.
+
+`get_frequency_dict(lang, wordlist='best')` returns all the frequencies in
+a wordlist as a dictionary, for cases where you'll want to look up a lot of
+words and don't need the wrapper that `word_frequency` provides.
+
+`available_languages(wordlist='best')` returns a dictionary whose keys are
+language codes, and whose values are the data file that will be loaded to
+provide the requested wordlist in each language.
+
+`get_language_info(lang)` returns a dictionary of information about how we
+preprocess text in this language, such as what script we expect it to be
+written in, which characters we normalize together, and how we tokenize it.
+See its docstring for more information.
+
+`random_words(lang='en', wordlist='best', nwords=5, bits_per_word=12)`
+returns a selection of random words, separated by spaces. `bits_per_word=n`
+will select each random word from 2^n words.
+
+If you happen to want an easy way to get [a memorable, xkcd-style
+password][xkcd936] with 60 bits of entropy, this function will almost do the
+job. In this case, you should actually run the similar function
+`random_ascii_words`, limiting the selection to words that can be typed in
+ASCII. But maybe you should just use [xkpa][].
+
+[xkcd936]: https://xkcd.com/936/
+[xkpa]: https://github.com/beala/xkcd-password
+
+## Tokenization
+
+wordfreq uses the Python package `regex`, which is a more advanced
+implementation of regular expressions than the standard library, to
+separate text into tokens that can be counted consistently. `regex`
+produces tokens that follow the recommendations in [Unicode
+Annex #29, Text Segmentation][uax29], including the optional rule that
+splits words between apostrophes and vowels.
+
+There are exceptions where we change the tokenization to work better
+with certain languages:
+
+- In Arabic and Hebrew, it additionally normalizes ligatures and removes
+  combining marks.
+
+- In Japanese and Korean, instead of using the regex library, it uses the
+  external library `mecab-python3`. This is an optional dependency of wordfreq,
+  and compiling it requires the `libmecab-dev` system package to be installed.
+
+- In Chinese, it uses the external Python library `jieba`, another optional
+  dependency.
+
+- While the @ sign is usually considered a symbol and not part of a word,
+  wordfreq will allow a word to end with "@" or "@s". This is one way of
+  writing gender-neutral words in Spanish and Portuguese.
+
+[uax29]: http://unicode.org/reports/tr29/
+
+When wordfreq's frequency lists are built in the first place, the words are
+tokenized according to this function.
+
+    >>> from wordfreq import tokenize
+    >>> tokenize('l@s niñ@s', 'es')
+    ['l@s', 'niñ@s']
+    >>> zipf_frequency('l@s', 'es')
+    3.03
+
+Because tokenization in the real world is far from consistent, wordfreq will
+also try to deal gracefully when you query it with texts that actually break
+into multiple tokens:
+
+    >>> zipf_frequency('New York', 'en')
+    5.32
+    >>> zipf_frequency('北京地铁', 'zh')  # "Beijing Subway"
+    3.29
+
+The word frequencies are combined with the half-harmonic-mean function in order
+to provide an estimate of what their combined frequency would be. In Chinese,
+where the word breaks must be inferred from the frequency of the resulting
+words, there is also a penalty to the word frequency for each word break that
+must be inferred.
+
+This method of combining word frequencies implicitly assumes that you're asking
+about words that frequently appear together. It's not multiplying the
+frequencies, because that would assume they are statistically unrelated. So if
+you give it an uncommon combination of tokens, it will hugely over-estimate
+their frequency:
+
+    >>> zipf_frequency('owl-flavored', 'en')
+    3.3
+
+## Multi-script languages
+
+Two of the languages we support, Serbian and Chinese, are written in multiple
+scripts. To avoid spurious differences in word frequencies, we automatically
+transliterate the characters in these languages when looking up their words.
+
+Serbian text written in Cyrillic letters is automatically converted to Latin
+letters, using standard Serbian transliteration, when the requested language is
+`sr` or `sh`. If you request the word list as `hr` (Croatian) or `bs`
+(Bosnian), no transliteration will occur.
+
+Chinese text is converted internally to a representation we call
+"Oversimplified Chinese", where all Traditional Chinese characters are replaced
+with their Simplified Chinese equivalent, *even if* they would not be written
+that way in context. This representation lets us use a straightforward mapping
+that matches both Traditional and Simplified words, unifying their frequencies
+when appropriate, and does not appear to create clashes between unrelated words.
+
+Enumerating the Chinese wordlist will produce some unfamiliar words, because
+people don't actually write in Oversimplified Chinese, and because in
+practice Traditional and Simplified Chinese also have different word usage.
+
+## Similar, overlapping, and varying languages
+
+As much as we would like to give each language its own distinct code and its
+own distinct word list with distinct source data, there aren't actually sharp
+boundaries between languages.
+
+Sometimes, it's convenient to pretend that the boundaries between languages
+coincide with national borders, following the maxim that "a language is a
+dialect with an army and a navy" (Max Weinreich). This gets complicated when the
+linguistic situation and the political situation diverge. Moreover, some of our
+data sources rely on language detection, which of course has no idea which
+country the writer of the text belongs to.
+
+So we've had to make some arbitrary decisions about how to represent the
+fuzzier language boundaries, such as those within Chinese, Malay, and
+Croatian/Bosnian/Serbian.
+
+Smoothing over our arbitrary decisions is the fact that we use the `langcodes`
+module to find the best match for a language code. If you ask for word
+frequencies in `cmn-Hans` (the fully specific language code for Mandarin in
+Simplified Chinese), you will get the `zh` wordlist, for example.
+
+## Additional CJK installation
+
+Chinese, Japanese, and Korean have additional external dependencies so that
+they can be tokenized correctly. They can all be installed at once by requesting
+the 'cjk' feature:
+
+    pip install wordfreq[cjk]
+
+You can put `wordfreq[cjk]` in a list of dependencies, such as the
+`[tool.poetry.dependencies]` list of your own project.
+
+Tokenizing Chinese depends on the `jieba` package, tokenizing Japanese depends
+on `mecab-python3` and `ipadic`, and tokenizing Korean depends on `mecab-python3`
+and `mecab-ko-dic`.
+
+As of version 2.4.2, you no longer have to install dictionaries separately.
+
+## License
+
+`wordfreq` is freely redistributable under the Apache license (see
+`LICENSE.txt`), and it includes data files that may be
+redistributed under a Creative Commons Attribution-ShareAlike 4.0
+license (<https://creativecommons.org/licenses/by-sa/4.0/>).
+
+`wordfreq` contains data extracted from Google Books Ngrams
+(<http://books.google.com/ngrams>) and Google Books Syntactic Ngrams
+(<http://commondatastorage.googleapis.com/books/syntactic-ngrams/index.html>).
+The terms of use of this data are:
+
+    Ngram Viewer graphs and data may be freely used for any purpose, although
+    acknowledgement of Google Books Ngram Viewer as the source, and inclusion
+    of a link to http://books.google.com/ngrams, would be appreciated.
+
+`wordfreq` also contains data derived from the following Creative Commons-licensed
+sources:
+
+- The Leeds Internet Corpus, from the University of Leeds Centre for Translation
+  Studies (<http://corpus.leeds.ac.uk/list.html>)
+
+- Wikipedia, the free encyclopedia (<http://www.wikipedia.org>)
+
+- ParaCrawl, a multilingual Web crawl (<https://paracrawl.eu>)
+
+It contains data from OPUS OpenSubtitles 2018
+(<http://opus.nlpl.eu/OpenSubtitles.php>), whose data originates from the
+OpenSubtitles project (<http://www.opensubtitles.org/>) and may be used with
+attribution to OpenSubtitles.
+
+It contains data from various SUBTLEX word lists: SUBTLEX-US, SUBTLEX-UK,
+SUBTLEX-CH, SUBTLEX-DE, and SUBTLEX-NL, created by Marc Brysbaert et al.
+(see citations below) and available at
+<http://crr.ugent.be/programs-data/subtitle-frequencies>.
+
+I (Robyn Speer) have obtained permission by e-mail from Marc Brysbaert to
+distribute these wordlists in wordfreq, to be used for any purpose, not just
+for academic use, under these conditions:
+
+- Wordfreq and code derived from it must credit the SUBTLEX authors.
+- It must remain clear that SUBTLEX is freely available data.
+
+These terms are similar to the Creative Commons Attribution-ShareAlike license.
+
+Some additional data was collected by a custom application that watches the
+streaming Twitter API, in accordance with Twitter's Developer Agreement &
+Policy. This software gives statistics about words that are commonly used on
+Twitter; it does not display or republish any Twitter content.
+
+## Can I convert wordfreq to a more convenient form for my purposes, like a CSV file?
+
+No. The CSV format does not have any space for attribution or license
+information, and therefore does not follow the CC-By-SA license. Even if you
+tried to include the proper attribution in a header or in another file, someone
+would likely just strip it out.
+
+wordfreq isn't particularly separable from its code, anyway. It depends on its
+normalization and word segmentation process, which is implemented in Python
+code, to give appropriate results.
+
+A reasonable way to transform wordfreq would be to port the library to another
+programming language, with all credits included and packaged in the usual way
+for that language.
+
+
+## Citing wordfreq
+
+If you use wordfreq in your research, please cite it! We publish the code
+through Zenodo so that it can be reliably cited using a DOI. The current
+citation is:
+
+> Robyn Speer. (2022). rspeer/wordfreq: v3.0 (v3.0.2). Zenodo. https://doi.org/10.5281/zenodo.7199437
+
+The same citation in BibTex format:
+
+```
+@software{robyn_speer_2022_7199437,
+  author       = {Robyn Speer},
+  title        = {rspeer/wordfreq: v3.0},
+  month        = sep,
+  year         = 2022,
+  publisher    = {Zenodo},
+  version      = {v3.0.2},
+  doi          = {10.5281/zenodo.7199437},
+  url          = {https://doi.org/10.5281/zenodo.7199437}
+}
+```
+
+## Citations to work that wordfreq is built on
+
+- Bojar, O., Chatterjee, R., Federmann, C., Haddow, B., Huck, M., Hokamp, C.,
+  Koehn, P., Logacheva, V., Monz, C., Negri, M., Post, M., Scarton, C.,
+  Specia, L., & Turchi, M. (2015). Findings of the 2015 Workshop on Statistical
+  Machine Translation.
+  <http://www.statmt.org/wmt15/results.html>
+
+- Brysbaert, M. & New, B. (2009). Moving beyond Kucera and Francis: A Critical
+  Evaluation of Current Word Frequency Norms and the Introduction of a New and
+  Improved Word Frequency Measure for American English. Behavior Research
+  Methods, 41 (4), 977-990.
+  <http://sites.google.com/site/borisnew/pub/BrysbaertNew2009.pdf>
+
+- Brysbaert, M., Buchmeier, M., Conrad, M., Jacobs, A.M., Bölte, J., & Böhl, A.
+  (2011). The word frequency effect: A review of recent developments and
+  implications for the choice of frequency estimates in German. Experimental
+  Psychology, 58, 412-424.
+
+- Cai, Q., & Brysbaert, M. (2010). SUBTLEX-CH: Chinese word and character
+  frequencies based on film subtitles. PLoS One, 5(6), e10729.
+  <http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0010729>
+
+- Davis, M. (2012). Unicode text segmentation. Unicode Standard Annex, 29.
+  <http://unicode.org/reports/tr29/>
+
+- Halácsy, P., Kornai, A., Németh, L., Rung, A., Szakadát, I., & Trón, V.
+  (2004). Creating open language resources for Hungarian. In Proceedings of the
+  4th international conference on Language Resources and Evaluation (LREC2004).
+  <http://mokk.bme.hu/resources/webcorpus/>
+
+- Keuleers, E., Brysbaert, M. & New, B. (2010). SUBTLEX-NL: A new frequency
+  measure for Dutch words based on film subtitles. Behavior Research Methods,
+  42(3), 643-650.
+  <http://crr.ugent.be/papers/SUBTLEX-NL_BRM.pdf>
+
+- Kudo, T. (2005). Mecab: Yet another part-of-speech and morphological
+  analyzer.
+  <http://mecab.sourceforge.net/>
+
+- Lin, Y., Michel, J.-B., Aiden, E. L., Orwant, J., Brockman, W., and Petrov,
+  S. (2012). Syntactic annotations for the Google Books Ngram Corpus.
+  Proceedings of the ACL 2012 system demonstrations, 169-174.
+  <http://aclweb.org/anthology/P12-3029>
+
+- Lison, P. and Tiedemann, J. (2016). OpenSubtitles2016: Extracting Large
+  Parallel Corpora from Movie and TV Subtitles. In Proceedings of the 10th
+  International Conference on Language Resources and Evaluation (LREC 2016).
+  <http://stp.lingfil.uu.se/~joerg/paper/opensubs2016.pdf>
+
+- Ortiz Suárez, P. J., Sagot, B., and Romary, L. (2019). Asynchronous pipelines
+  for processing huge corpora on medium to low resource infrastructures. In
+  Proceedings of the Workshop on Challenges in the Management of Large Corpora
+  (CMLC-7) 2019.
+  <https://oscar-corpus.com/publication/2019/clmc7/asynchronous/>
+
+- ParaCrawl (2018). Provision of Web-Scale Parallel Corpora for Official
+  European Languages. <https://paracrawl.eu/>
+
+- van Heuven, W. J., Mandera, P., Keuleers, E., & Brysbaert, M. (2014).
+  SUBTLEX-UK: A new and improved word frequency database for British English.
+  The Quarterly Journal of Experimental Psychology, 67(6), 1176-1190.
+  <http://www.tandfonline.com/doi/pdf/10.1080/17470218.2013.850521>
+
+
+wordfreq  
+Copyright 2022 Robyn Speer
+
+# Attribution notes
+
+Robyn Speer must be credited as Robyn Speer, which is her maiden name, used on academic work.
+Crediting her as Elia Robyn Lake (her married name) will make the credit less effective, as it will
+not line up with other work.
+
+Crediting Robyn Speer by a different name than one of the above is a serious violation of the license,
+in which case you do not have permission to use, copy, or redistribute wordfreq.
+
+If you use wordfreq in academic work, you must cite it. See "Citing wordfreq" in README.md.
+
+# Included licenses
+
+`wordfreq` is freely redistributable under the Apache license (see
+`LICENSE.txt`), and it includes data files that may be
+redistributed under a Creative Commons Attribution-ShareAlike 4.0
+license (<https://creativecommons.org/licenses/by-sa/4.0/>).
+
+`wordfreq` contains data extracted from Google Books Ngrams
+(<http://books.google.com/ngrams>) and Google Books Syntactic Ngrams
+(<http://commondatastorage.googleapis.com/books/syntactic-ngrams/index.html>).
+The terms of use of this data are:
+
+    Ngram Viewer graphs and data may be freely used for any purpose, although
+    acknowledgement of Google Books Ngram Viewer as the source, and inclusion
+    of a link to http://books.google.com/ngrams, would be appreciated.
+
+`wordfreq` also contains data derived from the following Creative Commons-licensed
+sources:
+
+- The Leeds Internet Corpus, from the University of Leeds Centre for Translation
+  Studies (<http://corpus.leeds.ac.uk/list.html>)
+
+- Wikipedia, the free encyclopedia (<http://www.wikipedia.org>)
+
+- ParaCrawl, a multilingual Web crawl (<https://paracrawl.eu>)
+
+It contains data from OPUS OpenSubtitles 2018
+(<http://opus.nlpl.eu/OpenSubtitles.php>), whose data originates from the
+OpenSubtitles project (<http://www.opensubtitles.org/>) and may be used with
+attribution to OpenSubtitles.
+
+It contains data from various SUBTLEX word lists: SUBTLEX-US, SUBTLEX-UK,
+SUBTLEX-CH, SUBTLEX-DE, and SUBTLEX-NL, created by Marc Brysbaert et al.
+(see citations below) and available at
+<http://crr.ugent.be/programs-data/subtitle-frequencies>.
+
+I (Robyn Speer) have obtained permission by e-mail from Marc Brysbaert to
+distribute these wordlists in wordfreq, to be used for any purpose, not just
+for academic use, under these conditions:
+
+- Wordfreq and code derived from it must credit the SUBTLEX authors.
+- It must remain clear that SUBTLEX is freely available data.
+
+These terms are similar to the Creative Commons Attribution-ShareAlike license.
+
+Some additional data was collected by a custom application that watched the
+streaming Twitter API, in accordance with Twitter's Developer Agreement &
+Policy. This software gives statistics about words that were commonly used on
+Twitter; it does not display or republish any Twitter content, and does not
+contain any content from after Twitter's sale.
+
+
+
+wordfreq software license (the application does not bundle Python code)
+Copyright 2022 Robyn Speer
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This license applies to the code only. See NOTICE.md for particular details
+about the licensing of the code and the data.
+
+
+OpenCorpora data: https://opencorpora.org/?page=faq
+CC BY-SA 3.0; source revision 417150, as packaged by pymorphy3-dicts-ru.
+
+
+Copyright 2000-2026 by Kevin Atkinson
+
+Permission to use, copy, modify, distribute, and sell any part of the English
+Speller Database (ESDB, previously known as SCOWLv2), or word lists
+created from it, is hereby granted without fee, provided that the above
+copyright notice appears in all copies and that both the above copyright
+notice and this notice appear in supporting documentation.  Kevin Atkinson
+makes no representations about the suitability of this database for any
+purpose.  It is provided "as is" without express or implied warranty.
+
+ESDB is derived from many sources, most of which are in the Public Domain.
+Data from the Corpus of Contemporary American English (COCA) was also used.
+
+All data from COCA comes from 3-gram data that is not freely available;
+however, the usage is within the rights given by the NDA that was signed when
+purchasing the data.  More information on COCA is available at
+https://www.english-corpora.org/coca/.
+
+The primary source of words for ESDB comes from 12dicts and ENABLE2K.  Both
+are in the Public Domain, but Alan Beale <biljir@pobox.com> deserves special
+credit as he is the author of 12dicts and a major contributor to ENABLE2K.  In
+addition, he gave me an incredible amount of feedback and created a number of
+special lists in order to help improve the overall quality of ESDB.
+
+===
+
+If you are using an official speller dictionary created by ESDB that is not
+Australian English, then no additional copyright applies and including the
+notice before the === is sufficient.
+
+If you are using the Australian English dictionary or a wordlist that uses the 'D'
+SPELLING code and/or the 'AU' REGION code, the copyright after '=== AU' applies.
+
+If you are using a generated word list larger than 80, the copyright
+after '=== UKACD' applies.
+
+If you are distributing the database or results from the 
+database that is not a speller dictionary or generated word list, then both
+copyrights may apply depending on the parts you use.  In addition, the WordNet
+copyright MIGHT apply as WordNet was one of many sources used for the initial
+POS assignment.
+
+=== AU
+
+The initial information for Australian English comes from Benjamin Titze:
+
+  Copyright 2016 by Benjamin Titze
+
+  Permission to use, copy, modify, distribute and sell this array, the
+  associated software, and its documentation for any purpose is hereby
+  granted without fee, provided that the above copyright notice appears
+  in all copies and that both that copyright notice and this permission
+  notice appear in supporting documentation. Benjamin Titze makes no
+  representations about the suitability of this array for any
+  purpose. It is provided "as is" without express or implied warranty.
+
+=== UKACD
+
+Some words used come from the UK Advanced Cryptics Dictionary:
+
+  Copyright (c) J Ross Beresford 1993-1999. All Rights Reserved.
+
+  The following restriction is placed on the use of this publication:
+  if The UK Advanced Cryptics Dictionary is used in a software package
+  or redistributed in any form, the copyright notice must be
+  prominently displayed and the text of this document must be included
+  verbatim.
+
+  There are no other restrictions: I would like to see the list
+  distributed as widely as possible.
+
+=== WordNet
+
+WordNet was used to help with the initial POS assignment:
+
+  This software and database is being provided to you, the LICENSEE,
+  by Princeton University under the following license.  By obtaining,
+  using and/or copying this software and database, you agree that you
+  have read, understood, and will comply with these terms and
+  conditions.:
+
+  Permission to use, copy, modify and distribute this software and
+  database and its documentation for any purpose and without fee or
+  royalty is hereby granted, provided that you agree to comply with
+  the following copyright notice and statements, including the
+  disclaimer, and that the same appear on ALL copies of the software,
+  database and documentation, including modifications that you make
+  for internal use or for distribution.
+
+  WordNet 1.6 Copyright 1997 by Princeton University.  All rights
+  reserved.
+
+  THIS SOFTWARE AND DATABASE IS PROVIDED "AS IS" AND PRINCETON
+  UNIVERSITY MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
+  IMPLIED.  BY WAY OF EXAMPLE, BUT NOT LIMITATION, PRINCETON
+  UNIVERSITY MAKES NO REPRESENTATIONS OR WARRANTIES OF MERCHANT-
+  ABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF THE
+  LICENSED SOFTWARE, DATABASE OR DOCUMENTATION WILL NOT INFRINGE ANY
+  THIRD PARTY PATENTS, COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+
+  The name of Princeton University or Princeton may not be used in
+  advertising or publicity pertaining to distribution of the software
+  and/or database.  Title to copyright in this software, database and
+  any associated documentation shall at all times remain with
+  Princeton University and LICENSEE agrees to preserve same.
+
+
+Creative Commons Legal Code
+
+Attribution-ShareAlike 3.0 Unported
+
+    CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE
+    LEGAL SERVICES. DISTRIBUTION OF THIS LICENSE DOES NOT CREATE AN
+    ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS
+    INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES
+    REGARDING THE INFORMATION PROVIDED, AND DISCLAIMS LIABILITY FOR
+    DAMAGES RESULTING FROM ITS USE.
+
+License
+
+THE WORK (AS DEFINED BELOW) IS PROVIDED UNDER THE TERMS OF THIS CREATIVE
+COMMONS PUBLIC LICENSE ("CCPL" OR "LICENSE"). THE WORK IS PROTECTED BY
+COPYRIGHT AND/OR OTHER APPLICABLE LAW. ANY USE OF THE WORK OTHER THAN AS
+AUTHORIZED UNDER THIS LICENSE OR COPYRIGHT LAW IS PROHIBITED.
+
+BY EXERCISING ANY RIGHTS TO THE WORK PROVIDED HERE, YOU ACCEPT AND AGREE
+TO BE BOUND BY THE TERMS OF THIS LICENSE. TO THE EXTENT THIS LICENSE MAY
+BE CONSIDERED TO BE A CONTRACT, THE LICENSOR GRANTS YOU THE RIGHTS
+CONTAINED HERE IN CONSIDERATION OF YOUR ACCEPTANCE OF SUCH TERMS AND
+CONDITIONS.
+
+1. Definitions
+
+ a. "Adaptation" means a work based upon the Work, or upon the Work and
+    other pre-existing works, such as a translation, adaptation,
+    derivative work, arrangement of music or other alterations of a
+    literary or artistic work, or phonogram or performance and includes
+    cinematographic adaptations or any other form in which the Work may be
+    recast, transformed, or adapted including in any form recognizably
+    derived from the original, except that a work that constitutes a
+    Collection will not be considered an Adaptation for the purpose of
+    this License. For the avoidance of doubt, where the Work is a musical
+    work, performance or phonogram, the synchronization of the Work in
+    timed-relation with a moving image ("synching") will be considered an
+    Adaptation for the purpose of this License.
+ b. "Collection" means a collection of literary or artistic works, such as
+    encyclopedias and anthologies, or performances, phonograms or
+    broadcasts, or other works or subject matter other than works listed
+    in Section 1(f) below, which, by reason of the selection and
+    arrangement of their contents, constitute intellectual creations, in
+    which the Work is included in its entirety in unmodified form along
+    with one or more other contributions, each constituting separate and
+    independent works in themselves, which together are assembled into a
+    collective whole. A work that constitutes a Collection will not be
+    considered an Adaptation (as defined below) for the purposes of this
+    License.
+ c. "Creative Commons Compatible License" means a license that is listed
+    at https://creativecommons.org/compatiblelicenses that has been
+    approved by Creative Commons as being essentially equivalent to this
+    License, including, at a minimum, because that license: (i) contains
+    terms that have the same purpose, meaning and effect as the License
+    Elements of this License; and, (ii) explicitly permits the relicensing
+    of adaptations of works made available under that license under this
+    License or a Creative Commons jurisdiction license with the same
+    License Elements as this License.
+ d. "Distribute" means to make available to the public the original and
+    copies of the Work or Adaptation, as appropriate, through sale or
+    other transfer of ownership.
+ e. "License Elements" means the following high-level license attributes
+    as selected by Licensor and indicated in the title of this License:
+    Attribution, ShareAlike.
+ f. "Licensor" means the individual, individuals, entity or entities that
+    offer(s) the Work under the terms of this License.
+ g. "Original Author" means, in the case of a literary or artistic work,
+    the individual, individuals, entity or entities who created the Work
+    or if no individual or entity can be identified, the publisher; and in
+    addition (i) in the case of a performance the actors, singers,
+    musicians, dancers, and other persons who act, sing, deliver, declaim,
+    play in, interpret or otherwise perform literary or artistic works or
+    expressions of folklore; (ii) in the case of a phonogram the producer
+    being the person or legal entity who first fixes the sounds of a
+    performance or other sounds; and, (iii) in the case of broadcasts, the
+    organization that transmits the broadcast.
+ h. "Work" means the literary and/or artistic work offered under the terms
+    of this License including without limitation any production in the
+    literary, scientific and artistic domain, whatever may be the mode or
+    form of its expression including digital form, such as a book,
+    pamphlet and other writing; a lecture, address, sermon or other work
+    of the same nature; a dramatic or dramatico-musical work; a
+    choreographic work or entertainment in dumb show; a musical
+    composition with or without words; a cinematographic work to which are
+    assimilated works expressed by a process analogous to cinematography;
+    a work of drawing, painting, architecture, sculpture, engraving or
+    lithography; a photographic work to which are assimilated works
+    expressed by a process analogous to photography; a work of applied
+    art; an illustration, map, plan, sketch or three-dimensional work
+    relative to geography, topography, architecture or science; a
+    performance; a broadcast; a phonogram; a compilation of data to the
+    extent it is protected as a copyrightable work; or a work performed by
+    a variety or circus performer to the extent it is not otherwise
+    considered a literary or artistic work.
+ i. "You" means an individual or entity exercising rights under this
+    License who has not previously violated the terms of this License with
+    respect to the Work, or who has received express permission from the
+    Licensor to exercise rights under this License despite a previous
+    violation.
+ j. "Publicly Perform" means to perform public recitations of the Work and
+    to communicate to the public those public recitations, by any means or
+    process, including by wire or wireless means or public digital
+    performances; to make available to the public Works in such a way that
+    members of the public may access these Works from a place and at a
+    place individually chosen by them; to perform the Work to the public
+    by any means or process and the communication to the public of the
+    performances of the Work, including by public digital performance; to
+    broadcast and rebroadcast the Work by any means including signs,
+    sounds or images.
+ k. "Reproduce" means to make copies of the Work by any means including
+    without limitation by sound or visual recordings and the right of
+    fixation and reproducing fixations of the Work, including storage of a
+    protected performance or phonogram in digital form or other electronic
+    medium.
+
+2. Fair Dealing Rights. Nothing in this License is intended to reduce,
+limit, or restrict any uses free from copyright or rights arising from
+limitations or exceptions that are provided for in connection with the
+copyright protection under copyright law or other applicable laws.
+
+3. License Grant. Subject to the terms and conditions of this License,
+Licensor hereby grants You a worldwide, royalty-free, non-exclusive,
+perpetual (for the duration of the applicable copyright) license to
+exercise the rights in the Work as stated below:
+
+ a. to Reproduce the Work, to incorporate the Work into one or more
+    Collections, and to Reproduce the Work as incorporated in the
+    Collections;
+ b. to create and Reproduce Adaptations provided that any such Adaptation,
+    including any translation in any medium, takes reasonable steps to
+    clearly label, demarcate or otherwise identify that changes were made
+    to the original Work. For example, a translation could be marked "The
+    original work was translated from English to Spanish," or a
+    modification could indicate "The original work has been modified.";
+ c. to Distribute and Publicly Perform the Work including as incorporated
+    in Collections; and,
+ d. to Distribute and Publicly Perform Adaptations.
+ e. For the avoidance of doubt:
+
+     i. Non-waivable Compulsory License Schemes. In those jurisdictions in
+        which the right to collect royalties through any statutory or
+        compulsory licensing scheme cannot be waived, the Licensor
+        reserves the exclusive right to collect such royalties for any
+        exercise by You of the rights granted under this License;
+    ii. Waivable Compulsory License Schemes. In those jurisdictions in
+        which the right to collect royalties through any statutory or
+        compulsory licensing scheme can be waived, the Licensor waives the
+        exclusive right to collect such royalties for any exercise by You
+        of the rights granted under this License; and,
+   iii. Voluntary License Schemes. The Licensor waives the right to
+        collect royalties, whether individually or, in the event that the
+        Licensor is a member of a collecting society that administers
+        voluntary licensing schemes, via that society, from any exercise
+        by You of the rights granted under this License.
+
+The above rights may be exercised in all media and formats whether now
+known or hereafter devised. The above rights include the right to make
+such modifications as are technically necessary to exercise the rights in
+other media and formats. Subject to Section 8(f), all rights not expressly
+granted by Licensor are hereby reserved.
+
+4. Restrictions. The license granted in Section 3 above is expressly made
+subject to and limited by the following restrictions:
+
+ a. You may Distribute or Publicly Perform the Work only under the terms
+    of this License. You must include a copy of, or the Uniform Resource
+    Identifier (URI) for, this License with every copy of the Work You
+    Distribute or Publicly Perform. You may not offer or impose any terms
+    on the Work that restrict the terms of this License or the ability of
+    the recipient of the Work to exercise the rights granted to that
+    recipient under the terms of the License. You may not sublicense the
+    Work. You must keep intact all notices that refer to this License and
+    to the disclaimer of warranties with every copy of the Work You
+    Distribute or Publicly Perform. When You Distribute or Publicly
+    Perform the Work, You may not impose any effective technological
+    measures on the Work that restrict the ability of a recipient of the
+    Work from You to exercise the rights granted to that recipient under
+    the terms of the License. This Section 4(a) applies to the Work as
+    incorporated in a Collection, but this does not require the Collection
+    apart from the Work itself to be made subject to the terms of this
+    License. If You create a Collection, upon notice from any Licensor You
+    must, to the extent practicable, remove from the Collection any credit
+    as required by Section 4(c), as requested. If You create an
+    Adaptation, upon notice from any Licensor You must, to the extent
+    practicable, remove from the Adaptation any credit as required by
+    Section 4(c), as requested.
+ b. You may Distribute or Publicly Perform an Adaptation only under the
+    terms of: (i) this License; (ii) a later version of this License with
+    the same License Elements as this License; (iii) a Creative Commons
+    jurisdiction license (either this or a later license version) that
+    contains the same License Elements as this License (e.g.,
+    Attribution-ShareAlike 3.0 US)); (iv) a Creative Commons Compatible
+    License. If you license the Adaptation under one of the licenses
+    mentioned in (iv), you must comply with the terms of that license. If
+    you license the Adaptation under the terms of any of the licenses
+    mentioned in (i), (ii) or (iii) (the "Applicable License"), you must
+    comply with the terms of the Applicable License generally and the
+    following provisions: (I) You must include a copy of, or the URI for,
+    the Applicable License with every copy of each Adaptation You
+    Distribute or Publicly Perform; (II) You may not offer or impose any
+    terms on the Adaptation that restrict the terms of the Applicable
+    License or the ability of the recipient of the Adaptation to exercise
+    the rights granted to that recipient under the terms of the Applicable
+    License; (III) You must keep intact all notices that refer to the
+    Applicable License and to the disclaimer of warranties with every copy
+    of the Work as included in the Adaptation You Distribute or Publicly
+    Perform; (IV) when You Distribute or Publicly Perform the Adaptation,
+    You may not impose any effective technological measures on the
+    Adaptation that restrict the ability of a recipient of the Adaptation
+    from You to exercise the rights granted to that recipient under the
+    terms of the Applicable License. This Section 4(b) applies to the
+    Adaptation as incorporated in a Collection, but this does not require
+    the Collection apart from the Adaptation itself to be made subject to
+    the terms of the Applicable License.
+ c. If You Distribute, or Publicly Perform the Work or any Adaptations or
+    Collections, You must, unless a request has been made pursuant to
+    Section 4(a), keep intact all copyright notices for the Work and
+    provide, reasonable to the medium or means You are utilizing: (i) the
+    name of the Original Author (or pseudonym, if applicable) if supplied,
+    and/or if the Original Author and/or Licensor designate another party
+    or parties (e.g., a sponsor institute, publishing entity, journal) for
+    attribution ("Attribution Parties") in Licensor's copyright notice,
+    terms of service or by other reasonable means, the name of such party
+    or parties; (ii) the title of the Work if supplied; (iii) to the
+    extent reasonably practicable, the URI, if any, that Licensor
+    specifies to be associated with the Work, unless such URI does not
+    refer to the copyright notice or licensing information for the Work;
+    and (iv) , consistent with Ssection 3(b), in the case of an
+    Adaptation, a credit identifying the use of the Work in the Adaptation
+    (e.g., "French translation of the Work by Original Author," or
+    "Screenplay based on original Work by Original Author"). The credit
+    required by this Section 4(c) may be implemented in any reasonable
+    manner; provided, however, that in the case of a Adaptation or
+    Collection, at a minimum such credit will appear, if a credit for all
+    contributing authors of the Adaptation or Collection appears, then as
+    part of these credits and in a manner at least as prominent as the
+    credits for the other contributing authors. For the avoidance of
+    doubt, You may only use the credit required by this Section for the
+    purpose of attribution in the manner set out above and, by exercising
+    Your rights under this License, You may not implicitly or explicitly
+    assert or imply any connection with, sponsorship or endorsement by the
+    Original Author, Licensor and/or Attribution Parties, as appropriate,
+    of You or Your use of the Work, without the separate, express prior
+    written permission of the Original Author, Licensor and/or Attribution
+    Parties.
+ d. Except as otherwise agreed in writing by the Licensor or as may be
+    otherwise permitted by applicable law, if You Reproduce, Distribute or
+    Publicly Perform the Work either by itself or as part of any
+    Adaptations or Collections, You must not distort, mutilate, modify or
+    take other derogatory action in relation to the Work which would be
+    prejudicial to the Original Author's honor or reputation. Licensor
+    agrees that in those jurisdictions (e.g. Japan), in which any exercise
+    of the right granted in Section 3(b) of this License (the right to
+    make Adaptations) would be deemed to be a distortion, mutilation,
+    modification or other derogatory action prejudicial to the Original
+    Author's honor and reputation, the Licensor will waive or not assert,
+    as appropriate, this Section, to the fullest extent permitted by the
+    applicable national law, to enable You to reasonably exercise Your
+    right under Section 3(b) of this License (right to make Adaptations)
+    but not otherwise.
+
+5. Representations, Warranties and Disclaimer
+
+UNLESS OTHERWISE MUTUALLY AGREED TO BY THE PARTIES IN WRITING, LICENSOR
+OFFERS THE WORK AS-IS AND MAKES NO REPRESENTATIONS OR WARRANTIES OF ANY
+KIND CONCERNING THE WORK, EXPRESS, IMPLIED, STATUTORY OR OTHERWISE,
+INCLUDING, WITHOUT LIMITATION, WARRANTIES OF TITLE, MERCHANTIBILITY,
+FITNESS FOR A PARTICULAR PURPOSE, NONINFRINGEMENT, OR THE ABSENCE OF
+LATENT OR OTHER DEFECTS, ACCURACY, OR THE PRESENCE OF ABSENCE OF ERRORS,
+WHETHER OR NOT DISCOVERABLE. SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION
+OF IMPLIED WARRANTIES, SO SUCH EXCLUSION MAY NOT APPLY TO YOU.
+
+6. Limitation on Liability. EXCEPT TO THE EXTENT REQUIRED BY APPLICABLE
+LAW, IN NO EVENT WILL LICENSOR BE LIABLE TO YOU ON ANY LEGAL THEORY FOR
+ANY SPECIAL, INCIDENTAL, CONSEQUENTIAL, PUNITIVE OR EXEMPLARY DAMAGES
+ARISING OUT OF THIS LICENSE OR THE USE OF THE WORK, EVEN IF LICENSOR HAS
+BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+7. Termination
+
+ a. This License and the rights granted hereunder will terminate
+    automatically upon any breach by You of the terms of this License.
+    Individuals or entities who have received Adaptations or Collections
+    from You under this License, however, will not have their licenses
+    terminated provided such individuals or entities remain in full
+    compliance with those licenses. Sections 1, 2, 5, 6, 7, and 8 will
+    survive any termination of this License.
+ b. Subject to the above terms and conditions, the license granted here is
+    perpetual (for the duration of the applicable copyright in the Work).
+    Notwithstanding the above, Licensor reserves the right to release the
+    Work under different license terms or to stop distributing the Work at
+    any time; provided, however that any such election will not serve to
+    withdraw this License (or any other license that has been, or is
+    required to be, granted under the terms of this License), and this
+    License will continue in full force and effect unless terminated as
+    stated above.
+
+8. Miscellaneous
+
+ a. Each time You Distribute or Publicly Perform the Work or a Collection,
+    the Licensor offers to the recipient a license to the Work on the same
+    terms and conditions as the license granted to You under this License.
+ b. Each time You Distribute or Publicly Perform an Adaptation, Licensor
+    offers to the recipient a license to the original Work on the same
+    terms and conditions as the license granted to You under this License.
+ c. If any provision of this License is invalid or unenforceable under
+    applicable law, it shall not affect the validity or enforceability of
+    the remainder of the terms of this License, and without further action
+    by the parties to this agreement, such provision shall be reformed to
+    the minimum extent necessary to make such provision valid and
+    enforceable.
+ d. No term or provision of this License shall be deemed waived and no
+    breach consented to unless such waiver or consent shall be in writing
+    and signed by the party to be charged with such waiver or consent.
+ e. This License constitutes the entire agreement between the parties with
+    respect to the Work licensed here. There are no understandings,
+    agreements or representations with respect to the Work not specified
+    here. Licensor shall not be bound by any additional provisions that
+    may appear in any communication from You. This License may not be
+    modified without the mutual written agreement of the Licensor and You.
+ f. The rights granted under, and the subject matter referenced, in this
+    License were drafted utilizing the terminology of the Berne Convention
+    for the Protection of Literary and Artistic Works (as amended on
+    September 28, 1979), the Rome Convention of 1961, the WIPO Copyright
+    Treaty of 1996, the WIPO Performances and Phonograms Treaty of 1996
+    and the Universal Copyright Convention (as revised on July 24, 1971).
+    These rights and subject matter take effect in the relevant
+    jurisdiction in which the License terms are sought to be enforced
+    according to the corresponding provisions of the implementation of
+    those treaty provisions in the applicable national law. If the
+    standard suite of rights granted under applicable copyright law
+    includes additional rights not granted under this License, such
+    additional rights are deemed to be included in the License; this
+    License is not intended to restrict the license of any rights under
+    applicable law.
+
+
+Creative Commons Notice
+
+    Creative Commons is not a party to this License, and makes no warranty
+    whatsoever in connection with the Work. Creative Commons will not be
+    liable to You or any party on any legal theory for any damages
+    whatsoever, including without limitation any general, special,
+    incidental or consequential damages arising in connection to this
+    license. Notwithstanding the foregoing two (2) sentences, if Creative
+    Commons has expressly identified itself as the Licensor hereunder, it
+    shall have all rights and obligations of Licensor.
+
+    Except for the limited purpose of indicating to the public that the
+    Work is licensed under the CCPL, Creative Commons does not authorize
+    the use by either party of the trademark "Creative Commons" or any
+    related trademark or logo of Creative Commons without the prior
+    written consent of Creative Commons. Any permitted use will be in
+    compliance with Creative Commons' then-current trademark usage
+    guidelines, as may be published on its website or otherwise made
+    available upon request from time to time. For the avoidance of doubt,
+    this trademark restriction does not form part of the License.
+
+    Creative Commons may be contacted at https://creativecommons.org/.
+
+
+Creative Commons Attribution-ShareAlike 4.0 International
+
+ Creative Commons Corporation (“Creative Commons”) is not a law firm and does not provide legal services or legal advice. Distribution of Creative Commons public licenses does not create a lawyer-client or other relationship. Creative Commons makes its licenses and related information available on an “as-is” basis. Creative Commons gives no warranties regarding its licenses, any material licensed under their terms and conditions, or any related information. Creative Commons disclaims all liability for damages resulting from their use to the fullest extent possible.
+
+Using Creative Commons Public Licenses
+
+Creative Commons public licenses provide a standard set of terms and conditions that creators and other rights holders may use to share original works of authorship and other material subject to copyright and certain other rights specified in the public license below. The following considerations are for informational purposes only, are not exhaustive, and do not form part of our licenses.
+
+Considerations for licensors: Our public licenses are intended for use by those authorized to give the public permission to use material in ways otherwise restricted by copyright and certain other rights. Our licenses are irrevocable. Licensors should read and understand the terms and conditions of the license they choose before applying it. Licensors should also secure all rights necessary before applying our licenses so that the public can reuse the material as expected. Licensors should clearly mark any material not subject to the license. This includes other CC-licensed material, or material used under an exception or limitation to copyright. More considerations for licensors.
+
+Considerations for the public: By using one of our public licenses, a licensor grants the public permission to use the licensed material under specified terms and conditions. If the licensor’s permission is not necessary for any reason–for example, because of any applicable exception or limitation to copyright–then that use is not regulated by the license. Our licenses grant only permissions under copyright and certain other rights that a licensor has authority to grant. Use of the licensed material may still be restricted for other reasons, including because others have copyright or other rights in the material. A licensor may make special requests, such as asking that all changes be marked or described.
+
+Although not required by our licenses, you are encouraged to respect those requests where reasonable. More considerations for the public.
+
+Creative Commons Attribution-ShareAlike 4.0 International Public License
+
+By exercising the Licensed Rights (defined below), You accept and agree to be bound by the terms and conditions of this Creative Commons Attribution-ShareAlike 4.0 International Public License ("Public License"). To the extent this Public License may be interpreted as a contract, You are granted the Licensed Rights in consideration of Your acceptance of these terms and conditions, and the Licensor grants You such rights in consideration of benefits the Licensor receives from making the Licensed Material available under these terms and conditions.
+
+Section 1 – Definitions.
+
+     a.	Adapted Material means material subject to Copyright and Similar Rights that is derived from or based upon the Licensed Material and in which the Licensed Material is translated, altered, arranged, transformed, or otherwise modified in a manner requiring permission under the Copyright and Similar Rights held by the Licensor. For purposes of this Public License, where the Licensed Material is a musical work, performance, or sound recording, Adapted Material is always produced where the Licensed Material is synched in timed relation with a moving image.
+
+     b.	Adapter's License means the license You apply to Your Copyright and Similar Rights in Your contributions to Adapted Material in accordance with the terms and conditions of this Public License.
+
+     c.	BY-SA Compatible License means a license listed at creativecommons.org/compatiblelicenses, approved by Creative Commons as essentially the equivalent of this Public License.
+
+     d.	Copyright and Similar Rights means copyright and/or similar rights closely related to copyright including, without limitation, performance, broadcast, sound recording, and Sui Generis Database Rights, without regard to how the rights are labeled or categorized. For purposes of this Public License, the rights specified in Section 2(b)(1)-(2) are not Copyright and Similar Rights.
+
+     e.	Effective Technological Measures means those measures that, in the absence of proper authority, may not be circumvented under laws fulfilling obligations under Article 11 of the WIPO Copyright Treaty adopted on December 20, 1996, and/or similar international agreements.
+
+     f.	Exceptions and Limitations means fair use, fair dealing, and/or any other exception or limitation to Copyright and Similar Rights that applies to Your use of the Licensed Material.
+
+     g.	License Elements means the license attributes listed in the name of a Creative Commons Public License. The License Elements of this Public License are Attribution and ShareAlike.
+
+     h.	Licensed Material means the artistic or literary work, database, or other material to which the Licensor applied this Public License.
+
+     i.	Licensed Rights means the rights granted to You subject to the terms and conditions of this Public License, which are limited to all Copyright and Similar Rights that apply to Your use of the Licensed Material and that the Licensor has authority to license.
+
+     j.	Licensor means the individual(s) or entity(ies) granting rights under this Public License.
+
+     k.	Share means to provide material to the public by any means or process that requires permission under the Licensed Rights, such as reproduction, public display, public performance, distribution, dissemination, communication, or importation, and to make material available to the public including in ways that members of the public may access the material from a place and at a time individually chosen by them.
+
+     l.	Sui Generis Database Rights means rights other than copyright resulting from Directive 96/9/EC of the European Parliament and of the Council of 11 March 1996 on the legal protection of databases, as amended and/or succeeded, as well as other essentially equivalent rights anywhere in the world.
+
+     m.	You means the individual or entity exercising the Licensed Rights under this Public License. Your has a corresponding meaning.
+
+Section 2 – Scope.
+
+     a.	License grant.
+
+          1. Subject to the terms and conditions of this Public License, the Licensor hereby grants You a worldwide, royalty-free, non-sublicensable, non-exclusive, irrevocable license to exercise the Licensed Rights in the Licensed Material to:
+
+               A. reproduce and Share the Licensed Material, in whole or in part; and
+
+               B. produce, reproduce, and Share Adapted Material.
+
+          2. Exceptions and Limitations. For the avoidance of doubt, where Exceptions and Limitations apply to Your use, this Public License does not apply, and You do not need to comply with its terms and conditions.
+
+          3. Term. The term of this Public License is specified in Section 6(a).
+
+          4. Media and formats; technical modifications allowed. The Licensor authorizes You to exercise the Licensed Rights in all media and formats whether now known or hereafter created, and to make technical modifications necessary to do so. The Licensor waives and/or agrees not to assert any right or authority to forbid You from making technical modifications necessary to exercise the Licensed Rights, including technical modifications necessary to circumvent Effective Technological Measures. For purposes of this Public License, simply making modifications authorized by this Section 2(a)(4) never produces Adapted Material.
+
+          5. Downstream recipients.
+
+               A. Offer from the Licensor – Licensed Material. Every recipient of the Licensed Material automatically receives an offer from the Licensor to exercise the Licensed Rights under the terms and conditions of this Public License.
+
+               B. Additional offer from the Licensor – Adapted Material. Every recipient of Adapted Material from You automatically receives an offer from the Licensor to exercise the Licensed Rights in the Adapted Material under the conditions of the Adapter’s License You apply.
+
+               C. No downstream restrictions. You may not offer or impose any additional or different terms or conditions on, or apply any Effective Technological Measures to, the Licensed Material if doing so restricts exercise of the Licensed Rights by any recipient of the Licensed Material.
+
+          6. No endorsement. Nothing in this Public License constitutes or may be construed as permission to assert or imply that You are, or that Your use of the Licensed Material is, connected with, or sponsored, endorsed, or granted official status by, the Licensor or others designated to receive attribution as provided in Section 3(a)(1)(A)(i).
+
+     b.	Other rights.
+
+          1. Moral rights, such as the right of integrity, are not licensed under this Public License, nor are publicity, privacy, and/or other similar personality rights; however, to the extent possible, the Licensor waives and/or agrees not to assert any such rights held by the Licensor to the limited extent necessary to allow You to exercise the Licensed Rights, but not otherwise.
+
+          2. Patent and trademark rights are not licensed under this Public License.
+
+          3. To the extent possible, the Licensor waives any right to collect royalties from You for the exercise of the Licensed Rights, whether directly or through a collecting society under any voluntary or waivable statutory or compulsory licensing scheme. In all other cases the Licensor expressly reserves any right to collect such royalties.
+
+Section 3 – License Conditions.
+
+Your exercise of the Licensed Rights is expressly made subject to the following conditions.
+
+     a.	Attribution.
+
+          1. If You Share the Licensed Material (including in modified form), You must:
+
+               A. retain the following if it is supplied by the Licensor with the Licensed Material:
+
+                    i.	identification of the creator(s) of the Licensed Material and any others designated to receive attribution, in any reasonable manner requested by the Licensor (including by pseudonym if designated);
+
+                    ii.	a copyright notice;
+
+                    iii. a notice that refers to this Public License;
+
+                    iv.	a notice that refers to the disclaimer of warranties;
+
+                    v.	a URI or hyperlink to the Licensed Material to the extent reasonably practicable;
+
+               B. indicate if You modified the Licensed Material and retain an indication of any previous modifications; and
+
+               C. indicate the Licensed Material is licensed under this Public License, and include the text of, or the URI or hyperlink to, this Public License.
+
+          2. You may satisfy the conditions in Section 3(a)(1) in any reasonable manner based on the medium, means, and context in which You Share the Licensed Material. For example, it may be reasonable to satisfy the conditions by providing a URI or hyperlink to a resource that includes the required information.
+
+          3. If requested by the Licensor, You must remove any of the information required by Section 3(a)(1)(A) to the extent reasonably practicable.
+
+     b.	ShareAlike.In addition to the conditions in Section 3(a), if You Share Adapted Material You produce, the following conditions also apply.
+
+          1. The Adapter’s License You apply must be a Creative Commons license with the same License Elements, this version or later, or a BY-SA Compatible License.
+
+          2. You must include the text of, or the URI or hyperlink to, the Adapter's License You apply. You may satisfy this condition in any reasonable manner based on the medium, means, and context in which You Share Adapted Material.
+
+          3. You may not offer or impose any additional or different terms or conditions on, or apply any Effective Technological Measures to, Adapted Material that restrict exercise of the rights granted under the Adapter's License You apply.
+
+Section 4 – Sui Generis Database Rights.
+
+Where the Licensed Rights include Sui Generis Database Rights that apply to Your use of the Licensed Material:
+
+     a.	for the avoidance of doubt, Section 2(a)(1) grants You the right to extract, reuse, reproduce, and Share all or a substantial portion of the contents of the database;
+
+     b.	if You include all or a substantial portion of the database contents in a database in which You have Sui Generis Database Rights, then the database in which You have Sui Generis Database Rights (but not its individual contents) is Adapted Material, including for purposes of Section 3(b); and
+
+     c.	You must comply with the conditions in Section 3(a) if You Share all or a substantial portion of the contents of the database.
+For the avoidance of doubt, this Section 4 supplements and does not replace Your obligations under this Public License where the Licensed Rights include other Copyright and Similar Rights.
+
+Section 5 – Disclaimer of Warranties and Limitation of Liability.
+
+     a.	Unless otherwise separately undertaken by the Licensor, to the extent possible, the Licensor offers the Licensed Material as-is and as-available, and makes no representations or warranties of any kind concerning the Licensed Material, whether express, implied, statutory, or other. This includes, without limitation, warranties of title, merchantability, fitness for a particular purpose, non-infringement, absence of latent or other defects, accuracy, or the presence or absence of errors, whether or not known or discoverable. Where disclaimers of warranties are not allowed in full or in part, this disclaimer may not apply to You.
+
+     b.	To the extent possible, in no event will the Licensor be liable to You on any legal theory (including, without limitation, negligence) or otherwise for any direct, special, indirect, incidental, consequential, punitive, exemplary, or other losses, costs, expenses, or damages arising out of this Public License or use of the Licensed Material, even if the Licensor has been advised of the possibility of such losses, costs, expenses, or damages. Where a limitation of liability is not allowed in full or in part, this limitation may not apply to You.
+
+     c.	The disclaimer of warranties and limitation of liability provided above shall be interpreted in a manner that, to the extent possible, most closely approximates an absolute disclaimer and waiver of all liability.
+
+Section 6 – Term and Termination.
+
+     a.	This Public License applies for the term of the Copyright and Similar Rights licensed here. However, if You fail to comply with this Public License, then Your rights under this Public License terminate automatically.
+
+     b.	Where Your right to use the Licensed Material has terminated under Section 6(a), it reinstates:
+
+          1. automatically as of the date the violation is cured, provided it is cured within 30 days of Your discovery of the violation; or
+
+          2. upon express reinstatement by the Licensor.
+
+     c.	For the avoidance of doubt, this Section 6(b) does not affect any right the Licensor may have to seek remedies for Your violations of this Public License.
+
+     d.	For the avoidance of doubt, the Licensor may also offer the Licensed Material under separate terms or conditions or stop distributing the Licensed Material at any time; however, doing so will not terminate this Public License.
+
+     e.	Sections 1, 5, 6, 7, and 8 survive termination of this Public License.
+
+Section 7 – Other Terms and Conditions.
+
+     a.	The Licensor shall not be bound by any additional or different terms or conditions communicated by You unless expressly agreed.
+
+     b.	Any arrangements, understandings, or agreements regarding the Licensed Material not stated herein are separate from and independent of the terms and conditions of this Public License.
+
+Section 8 – Interpretation.
+
+     a.	For the avoidance of doubt, this Public License does not, and shall not be interpreted to, reduce, limit, restrict, or impose conditions on any use of the Licensed Material that could lawfully be made without permission under this Public License.
+
+     b.	To the extent possible, if any provision of this Public License is deemed unenforceable, it shall be automatically reformed to the minimum extent necessary to make it enforceable. If the provision cannot be reformed, it shall be severed from this Public License without affecting the enforceability of the remaining terms and conditions.
+
+     c.	No term or condition of this Public License will be waived and no failure to comply consented to unless expressly agreed to by the Licensor.
+
+     d.	Nothing in this Public License constitutes or may be interpreted as a limitation upon, or waiver of, any privileges and immunities that apply to the Licensor or You, including from the legal processes of any jurisdiction or authority.
+
+Creative Commons is not a party to its public licenses. Notwithstanding, Creative Commons may elect to apply one of its public licenses to material it publishes and in those instances will be considered the “Licensor.” Except for the limited purpose of indicating that material is shared under a Creative Commons public license or as otherwise permitted by the Creative Commons policies published at creativecommons.org/policies, Creative Commons does not authorize the use of the trademark “Creative Commons” or any other trademark or logo of Creative Commons without its prior written consent including, without limitation, in connection with any unauthorized modifications to any of its public licenses or any other arrangements, understandings, or agreements concerning use of licensed material. For the avoidance of doubt, this paragraph does not form part of the public licenses.
+
+Creative Commons may be contacted at creativecommons.org.

@@ -1,0 +1,19 @@
+# Publish only application source, tests, required resources and README.
+/*
+!/.gitignore
+!/README.md
+!/Package.swift
+!/Sources/
+!/Resources/
+!/Tests/
+
+# Credentials and local maintenance tools must never be committed.
+/keys/
+/scripts/
+/.build/
+/.upstream/
+/dist/
+/benchmarks/
+.DS_Store
+Resources/IconPreview.png
+Resources/AppIcon.iconset/
