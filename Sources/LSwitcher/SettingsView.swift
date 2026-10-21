@@ -4,18 +4,20 @@ import LSwitcherCore
 private let brand = Color(red: 0.40, green: 0.33, blue: 0.85)
 
 enum SettingsPage: String, CaseIterable {
-    case general = "Переключение", exclusions = "Исключения", access = "Доступ и диагностика"
+    case general = "Переключение", exclusions = "Исключения", access = "Доступ и диагностика", about = "О программе"
     var icon: String {
         switch self {
         case .general: return "arrow.left.arrow.right"
         case .exclusions: return "app.badge.checkmark"
         case .access: return "checkmark.shield"
+        case .about: return "info.circle"
         }
     }
 }
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @StateObject private var updates = Updates()
     private var page: SettingsPage { model.page }
     @Environment(\.colorScheme) private var scheme
     private var canvas: Color { scheme == .dark ? Color(red: 0.08, green: 0.09, blue: 0.13) : Color(red: 0.965, green: 0.969, blue: 0.985) }
@@ -31,6 +33,7 @@ struct SettingsView: View {
                     case .general: general
                     case .exclusions: exclusions
                     case .access: access
+                    case .about: about
                     }
                 }
                 .padding(.horizontal, 32).padding(.top, 46).padding(.bottom, 28)
@@ -76,7 +79,7 @@ struct SettingsView: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 Text("Русский ⇄ English").font(.system(size: 11)).foregroundStyle(.secondary)
-                Text("Версия 0.3.0 · Сделано для Mac").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("Версия \(Updates.version) · Сделано для Mac").font(.system(size: 10)).foregroundStyle(.tertiary)
             }.padding(13)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(brand.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
@@ -99,7 +102,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(page.rawValue).font(.system(size: 27, weight: .bold, design: .rounded))
             Text(page == .general ? "Пишите свободно. Раскладку поправит LSwitcher." :
-                 page == .exclusions ? "Вы решаете, где нужна автоматическая помощь." : "Всё необходимое для стабильной работы.")
+                 page == .exclusions ? "Вы решаете, где нужна автоматическая помощь." :
+                 page == .about ? "LSwitcher · Русский ⇄ English" : "Всё необходимое для стабильной работы.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
@@ -259,6 +263,34 @@ struct SettingsView: View {
                 }
             }
             Label("Все настройки и обработка — на вашем Mac", systemImage: "internaldrive").font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+    private var about: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            card {
+                HStack(spacing: 18) {
+                    appIcon.frame(width: 72, height: 72)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("LSwitcher").font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text("Версия \(Updates.version)").foregroundStyle(.secondary)
+                        Text("В ритме ваших мыслей").font(.system(size: 12))
+                    }
+                }
+                Text("Лёгкий помощник для исправления раскладки. Обработка текста происходит на вашем Mac; история набора не сохраняется.")
+                    .foregroundStyle(.secondary)
+                Link("Репозиторий на GitHub ↗", destination: Updates.repository)
+                Link("Сообщить об ошибке ↗", destination: Updates.repository.appendingPathComponent("issues"))
+            }
+            card {
+                rowTitle("Обновления", subtitle: updates.message, symbol: "arrow.down.circle")
+                HStack {
+                    Button(updates.checking ? "Проверяем…" : "Проверить обновления", action: updates.check)
+                        .buttonStyle(.borderedProminent).disabled(updates.checking)
+                    Link(updates.available ? "Скачать новую версию ↗" : "Все релизы ↗", destination: Updates.releases)
+                }
+                Text("Проверка выполняется только по нажатию кнопки: приложение обращается к GitHub без передачи набранного текста. Для установки скачайте DMG со страницы релиза и замените приложение в Applications. После обновления локальной сборки может потребоваться повторная выдача разрешений macOS.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
         }
     }
     private func permissionRow(_ title: String, detail: String, allowed: Bool, action: @escaping () -> Void) -> some View {

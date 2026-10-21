@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoItem = menu.addItem(withTitle: "Автоисправление", action: #selector(toggleAutomatic), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Настройки…", action: #selector(showSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "О программе…", action: #selector(showAbout), keyEquivalent: "")
         menu.addItem(withTitle: "Выход", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
         statusItem.menu = menu
@@ -71,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func applicationChanged() { model.engine.reset() }
     @objc private func toggleEnabled() { model.setEnabled(!model.enabled) }
     @objc private func toggleAutomatic() { model.setAutomatic(!model.automatic) }
+    @objc private func showAbout() { model.page = .about; showSettings() }
     @objc private func showSettings() {
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 720),
