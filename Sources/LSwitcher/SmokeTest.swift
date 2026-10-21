@@ -19,30 +19,43 @@ extension AppModel {
             let originalEnabled = enabled
             let originalAutomatic = automatic
             let originalShiftMode = shiftMode
+            let originalWords = neverCorrect
             defer {
                 Preferences.shared.exclusions = originalExclusions
                 setEnabled(originalEnabled)
                 setAutomatic(originalAutomatic)
                 setShiftMode(originalShiftMode)
+                setNeverCorrect(originalWords)
                 testing = false
                 refresh()
             }
             do {
-                setEnabled(true); setAutomatic(true); setShiftMode("both")
+                setEnabled(true); setAutomatic(true); setShiftMode("both"); setNeverCorrect("")
                 Preferences.shared.exclusions = originalExclusions.split(whereSeparator: \.isNewline)
-                    .filter { $0.trimmingCharacters(in: .whitespaces) != "com.apple.TextEdit" }.joined(separator: "\n")
+                    .filter { $0.trimmingCharacters(in: .whitespaces) != testEditorID }.joined(separator: "\n")
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LSwitcher-\(UUID().uuidString)")
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let marker = "LSwitcher test \(UUID().uuidString)"
-                let file = directory.appendingPathComponent("LSwitcher test.txt")
-                try marker.write(to: file, atomically: true, encoding: .utf8)
-                guard let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") else {
-                    throw SmokeFailure.message("TextEdit не найден")
+                let browser = testEditorID != "com.apple.TextEdit"
+                guard ["com.apple.TextEdit", "com.apple.Safari", "com.google.Chrome"].contains(testEditorID) else {
+                    throw SmokeFailure.message("Неподдерживаемый тестовый редактор")
+                }
+                let file = directory.appendingPathComponent(browser ? "LSwitcher test.html" : "LSwitcher test.txt")
+                let content = browser ? "<!doctype html><meta charset='utf-8'><title>LSwitcher Input Test</title><h1>LSwitcher · Temporary input test</h1><textarea autofocus spellcheck='false' autocorrect='off' autocapitalize='off' style='width:90vw;height:70vh;font:20px monospace'>\(marker)</textarea>" : marker
+                try content.write(to: file, atomically: true, encoding: .utf8)
+                guard let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: testEditorID) else {
+                    throw SmokeFailure.message("Тестовое приложение не установлено")
                 }
                 _ = try await NSWorkspace.shared.open([file], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
-                try await delay(1.5)
-                let field = try testField()
-                guard try read(field).contains(marker) else { throw SmokeFailure.message("Не найден временный тестовый документ. Проверка остановлена.") }
+                AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication)
+                var candidate: AXUIElement?
+                for _ in 0..<40 {
+                    try await delay(0.25)
+                    if let focused = try? testField(), let value = try? read(focused), value.contains(marker) {
+                        candidate = focused; break
+                    }
+                }
+                guard let field = candidate else { throw SmokeFailure.message("Тестовое поле не готово или потеряло фокус. Ввод не отправлен; повторите после загрузки редактора.") }
                 testResults = ""
                 var checks = 0
                 @MainActor func verify(_ name: String, expected: String) async throws {
@@ -69,6 +82,37 @@ extension AppModel {
                 try await type("ghbdtn ", field: field)
                 try await verify("Автоисправление RU", expected: "привет ")
 
+                try await press(51, field: field)
+                try await verify("Backspace отменяет автозамену", expected: "ghbdtn ")
+                try await press(51, field: field)
+                try await verify("Повторный Backspace удаляет символ", expected: "ghbdtn")
+
+                setNeverCorrect("GHBDTN")
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await verify("Личное исключение слова", expected: "ghbdtn ")
+                setNeverCorrect("")
+
+                for input in ["https://ghbdtn ", "user@ghbdtn ", "/tmp/ghbdtn ", "id123ghbdtn "] {
+                    try await clear(field)
+                    try await type(input, field: field)
+                    try await verify("Адрес или путь без автозамены", expected: input)
+                }
+
+                try await clear(field)
+                try await type("ghbdtn", field: field)
+                try await press(123, field: field)
+                try await type(" ", field: field)
+                try await verify("Перемещение курсора сбрасывает слово", expected: "ghbdt n")
+
+                engine.suspend(); engine.start()
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await verify("Обработчик восстановлен после приостановки", expected: "привет ")
+                engine.reset()
+                try await press(51, field: field)
+                try await verify("Сброс контекста отменяет возможность отката", expected: "привет")
+
                 try await clear(field)
                 try await type("руддщ ", field: field)
                 try await verify("Автоисправление EN", expected: "hello ")
@@ -84,7 +128,7 @@ extension AppModel {
                     try await verify(name, expected: expected)
                 }
 
-                Preferences.shared.exclusions += "\ncom.apple.TextEdit"
+                Preferences.shared.exclusions += "\n" + testEditorID
                 try await clear(field)
                 try await type("ghbdtn ", field: field)
                 try await verify("Автоисправление отключено исключением", expected: "ghbdtn ")
@@ -107,12 +151,12 @@ extension AppModel {
 
     private func delay(_ seconds: Double) async throws { try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
     private func testField() throws -> AXUIElement {
-        guard let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier == "com.apple.TextEdit" else {
-            throw SmokeFailure.message("Фокус ушёл из TextEdit. Тест остановлен, ввод не отправлен.")
+        guard let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier == testEditorID else {
+            throw SmokeFailure.message("Фокус ушёл из тестового редактора. Тест остановлен, ввод не отправлен.")
         }
         let result = AccessibilityFocus.element(app: app, timeout: 1)
         guard let element = result.element else {
-            throw SmokeFailure.message("Нет доступа к тестовому полю TextEdit: AX \(result.error.rawValue), PID \(app.processIdentifier), trusted=\(AXIsProcessTrusted())")
+            throw SmokeFailure.message("Нет доступа к тестовому полю: AX \(result.error.rawValue), PID \(app.processIdentifier), trusted=\(AXIsProcessTrusted())")
         }
         return element
     }
@@ -120,7 +164,7 @@ extension AppModel {
         guard CFEqual(field, try testField()) else { throw SmokeFailure.message("Тестовое поле потеряло фокус") }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(field, kAXValueAttribute as CFString, &value) == .success,
-              let text = value as? String else { throw SmokeFailure.message("TextEdit не предоставил текст результата") }
+              let text = value as? String else { throw SmokeFailure.message("Редактор не предоставил текст результата") }
         return text
     }
     private func press(_ code: CGKeyCode, text: String? = nil, modifiers: CGEventFlags = [], field: AXUIElement) async throws {

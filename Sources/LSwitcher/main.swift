@@ -26,6 +26,12 @@ final class Preferences {
         get { defaults.string(forKey: "exclusions") ?? "com.apple.Terminal\ncom.googlecode.iterm2\ncom.agilebits.onepassword7\ncom.1password.1password" }
         set { defaults.set(newValue, forKey: "exclusions") }
     }
+    var neverCorrect: String {
+        get { defaults.string(forKey: "neverCorrect") ?? "" }
+        set { defaults.set(newValue, forKey: "neverCorrect"); personalWords = PersonalWords.normalized(newValue) }
+    }
+    private lazy var personalWords = PersonalWords.normalized(neverCorrect)
+    func protects(_ word: String) -> Bool { PersonalWords.contains(word, in: personalWords) }
     func excludes(_ identifier: String) -> Bool {
         AutomaticExclusions.contains(identifier, in: exclusions)
     }
@@ -36,6 +42,9 @@ final class KeyboardEngine {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var word = ""
+    private var protectedToken = false
+    private var undo: CorrectionUndo?
+    private var undoElement: AXUIElement?
     private var focusedElement: AXUIElement?
     private var lastPID: pid_t = 0
     private var doubleShift = DoubleShiftDetector()
@@ -74,7 +83,12 @@ final class KeyboardEngine {
         statusChanged?()
     }
 
-    func reset() { word = ""; focusedElement = nil; doubleShift.cancel(); leftDoubleShift.cancel() }
+    func reset() { word = ""; protectedToken = false; undo = nil; undoElement = nil; focusedElement = nil; doubleShift.cancel(); leftDoubleShift.cancel() }
+
+    func suspend() {
+        reset()
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+    }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -99,6 +113,7 @@ final class KeyboardEngine {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
         let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
         if type == .flagsChanged {
+            undo = nil; undoElement = nil
             if code == 60 || code == 56 {
                 shiftEvents += 1
                 let right = code == 60
@@ -115,6 +130,7 @@ final class KeyboardEngine {
                     triggered = leftDoubleShift.update(isDown: isDown, time: Double(event.timestamp) / 1_000_000_000, otherModifiers: other || !allowed)
                 }
                 if triggered {
+                    undo = nil; undoElement = nil
                     diagnostic = "Двойной \(right ? "правый" : "левый") Shift распознан"
                     // Release the event tap before making cross-process Accessibility calls.
                     DispatchQueue.main.async { [weak self] in
@@ -131,13 +147,24 @@ final class KeyboardEngine {
         leftDoubleShift.cancel()
         guard let element = focusedInput(for: app) else { word = ""; return Unmanaged.passUnretained(event) }
         if lastPID != app.processIdentifier || focusedElement.map({ !CFEqual($0, element) }) != false {
-            word = ""
+            word = ""; protectedToken = false; undo = nil; undoElement = nil
         }
         lastPID = app.processIdentifier
         focusedElement = element
         if !modifiers.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty {
-            word = ""; return Unmanaged.passUnretained(event)
+            word = ""; undo = nil; undoElement = nil; return Unmanaged.passUnretained(event)
         }
+        if code == 51, modifiers.isEmpty, let pending = undo, let undoElement, CFEqual(undoElement, element),
+           let state = textState(element), pending.matches(text: state.text, caret: state.range.location,
+                selectionLength: state.range.length, time: ProcessInfo.processInfo.systemUptime) {
+            undo = nil; self.undoElement = nil
+            replace(count: pending.replacement.count + pending.delimiter.count, with: pending.original + pending.delimiter)
+            selectLayout(for: pending.original)
+            word = ""; protectedToken = false
+            diagnostic = "Автоисправление отменено"
+            return nil
+        }
+        undo = nil; undoElement = nil
         if code == 51 {
             if !word.isEmpty { word.removeLast() }
             return Unmanaged.passUnretained(event)
@@ -149,16 +176,26 @@ final class KeyboardEngine {
         guard !text.isEmpty, !text.unicodeScalars.contains(where: { $0.value < 32 && $0 != "\r" && $0 != "\t" && $0 != "\n" }) else {
             word = ""; return Unmanaged.passUnretained(event)
         }
+        if text.contains(where: { $0.isNumber || "@:/\\_-=+".contains($0) }) { protectedToken = true }
         if text.allSatisfy({ $0.isLetter || "[];',`.".contains($0) }) {
             word += text
             if word.count > 80 { word = "" }
         } else {
-            if preferences.automatic, !preferences.excludes(app.bundleIdentifier ?? ""),
+            if preferences.automatic, !protectedToken, !preferences.protects(word), !preferences.excludes(app.bundleIdentifier ?? ""),
                text == " " || text == "\r" || text == "\t",
                let replacement = LayoutConverter.automaticReplacement(for: word) {
+                // Only offer undo when the caret and source suffix can be verified.
+                if text == " ", let state = textState(element), state.range.length == 0,
+                   let end = String.Index(utf16Offset: state.range.location, in: state.text).samePosition(in: state.text),
+                   state.text[..<end].suffix(word.count).lowercased() == word.lowercased() {
+                    undo = CorrectionUndo(original: word, replacement: replacement, delimiter: text,
+                        caret: state.range.location - word.utf16.count + replacement.utf16.count + text.utf16.count,
+                        time: ProcessInfo.processInfo.systemUptime)
+                    undoElement = element
+                }
                 replace(count: word.count, with: replacement)
                 automaticCorrections += 1
-                diagnostic = "Автоисправление отправлено"
+                diagnostic = undo == nil ? "Автоисправление отправлено" : "Автоисправление отправлено · Backspace отменяет"
                 event.setIntegerValueField(.eventSourceUserData, value: injectedEventTag)
                 event.post(tap: .cghidEventTap)
                 selectLayout(for: replacement)
@@ -166,6 +203,7 @@ final class KeyboardEngine {
                 return nil
             }
             word = ""
+            if text.contains(where: \.isWhitespace) { protectedToken = false }
         }
         return Unmanaged.passUnretained(event)
     }
@@ -204,6 +242,18 @@ final class KeyboardEngine {
         manualCorrections += 1
         diagnostic = "Ручное исправление отправлено"
         word = ""
+    }
+
+    private func textState(_ element: AXUIElement) -> (text: String, range: CFRange)? {
+        var value: CFTypeRef?, selection: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
+              let text = value as? String,
+              AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selection) == .success,
+              let selection, CFGetTypeID(selection) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(unsafeDowncast(selection, to: AXValue.self), .cfRange, &range),
+              range.location >= 0, range.location <= text.utf16.count else { return nil }
+        return (text, range)
     }
 
     private func wordBeforeCursor(element: AXUIElement) -> (word: String, suffix: String)? {

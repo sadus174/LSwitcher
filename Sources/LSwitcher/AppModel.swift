@@ -10,9 +10,11 @@ final class AppModel: ObservableObject {
     @Published var page = SettingsPage.general
     @Published var testing = false
     @Published var testResults = ""
+    @Published var testEditorID = "com.apple.TextEdit"
     @Published var enabled = Preferences.shared.enabled
     @Published var automatic = Preferences.shared.automatic
     @Published var shiftMode = Preferences.shared.shiftMode
+    @Published var neverCorrect = Preferences.shared.neverCorrect
     @Published var excludedIDs: [String] = []
     @Published var accessibility = false
     @Published var listening = false
@@ -59,6 +61,11 @@ final class AppModel: ObservableObject {
     }
     func setShiftMode(_ value: String) {
         shiftMode = value; Preferences.shared.shiftMode = value; engine.reset()
+    }
+    func setNeverCorrect(_ value: String) {
+        neverCorrect = String(value.prefix(100_000))
+        Preferences.shared.neverCorrect = neverCorrect
+        engine.reset()
     }
     private func loadExclusions() {
         excludedIDs = Array(Set(Preferences.shared.exclusions.split(whereSeparator: \.isNewline)

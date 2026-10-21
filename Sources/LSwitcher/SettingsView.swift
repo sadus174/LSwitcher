@@ -161,7 +161,7 @@ struct SettingsView: View {
                     Text("Только правый").tag("right")
                     Text("Только левый").tag("left")
                 }.pickerStyle(.segmented)
-                Text("Два коротких нажатия одной и той же клавиши Shift. Работает и после пробела. Набор заглавных букв не запускает исправление.")
+                Text("Backspace сразу после автозамены отменяет её (в течение 5 секунд, если поле позволяет проверить положение курсора). Два коротких нажатия одной и той же клавиши Shift. Работает и после пробела. Набор заглавных букв не запускает исправление.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if !model.ready {
@@ -217,6 +217,12 @@ struct SettingsView: View {
                     }.padding(.vertical, 3)
                 }
             }
+            card {
+                rowTitle("Никогда не исправлять", subtitle: "Одно слово в строке, до 5 000 слов. Только явно добавленные вами записи; регистр не учитывается. Двойной Shift продолжает работать.", symbol: "text.badge.checkmark")
+                TextEditor(text: Binding(get: { model.neverCorrect }, set: model.setNeverCorrect))
+                    .font(.system(size: 12, design: .monospaced)).frame(height: 110)
+                    .accessibilityLabel("Слова без автоисправления")
+            }
             Label("Изменения сохраняются сразу", systemImage: "checkmark.circle").font(.system(size: 11)).foregroundStyle(.secondary)
             card {
                 rowTitle("Пароли остаются паролями", subtitle: "Защищённые поля и режим Secure Input пропускаются. В 1Password переключение полностью отключено.", symbol: "lock")
@@ -252,10 +258,15 @@ struct SettingsView: View {
                 Text("Только счётчики за текущий запуск. Набранный текст не записывается и никуда не отправляется.")
                     .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 Divider()
+                Picker("Тестовый редактор", selection: $model.testEditorID) {
+                    Text("TextEdit").tag("com.apple.TextEdit")
+                    Text("Safari").tag("com.apple.Safari")
+                    Text("Chrome").tag("com.google.Chrome")
+                }.disabled(model.testing)
                 HStack {
-                    Button(model.testing ? "Идёт проверка…" : "Проверить в TextEdit", action: model.runSmokeTest)
+                    Button(model.testing ? "Идёт проверка…" : "Проверить ввод", action: model.runSmokeTest)
                         .buttonStyle(.bordered).disabled(model.testing || !model.ready)
-                    Text("Откроется отдельный временный документ.").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("Откроется отдельный временный документ или локальная тестовая страница.").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 if !model.testResults.isEmpty {
                     Text(model.testResults).font(.system(size: 11, design: .monospaced))
@@ -285,10 +296,17 @@ struct SettingsView: View {
                 rowTitle("Обновления", subtitle: updates.message, symbol: "arrow.down.circle")
                 HStack {
                     Button(updates.checking ? "Проверяем…" : "Проверить обновления", action: updates.check)
-                        .buttonStyle(.borderedProminent).disabled(updates.checking)
+                        .buttonStyle(.borderedProminent).disabled(updates.checking || updates.downloading || updates.readyToInstall)
                     Link(updates.available ? "Скачать новую версию ↗" : "Все релизы ↗", destination: Updates.releases)
                 }
-                Text("Проверка выполняется только по нажатию кнопки: приложение обращается к GitHub без передачи набранного текста. Для установки скачайте DMG со страницы релиза и замените приложение в Applications. После обновления локальной сборки может потребоваться повторная выдача разрешений macOS.")
+                if updates.canDownload && !updates.readyToInstall {
+                    Button(updates.downloading ? "Скачиваем…" : "Скачать обновление", action: updates.download)
+                        .buttonStyle(.bordered).disabled(updates.downloading)
+                }
+                if updates.readyToInstall {
+                    Button("Установить и перезапустить", action: updates.install).buttonStyle(.borderedProminent)
+                }
+                Text("Проверка выполняется только по нажатию кнопки: приложение обращается к GitHub без передачи набранного текста. Пакет проверяется по закреплённому ключу Ed25519 и SHA256, затем устанавливается с вашим подтверждением. DMG остаётся доступен для ручной установки. После обновления локальной сборки может потребоваться повторная выдача разрешений macOS.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
