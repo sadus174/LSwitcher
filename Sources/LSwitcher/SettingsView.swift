@@ -164,6 +164,16 @@ struct SettingsView: View {
                 Text("Backspace сразу после автозамены отменяет её (в течение 5 секунд, если поле позволяет проверить положение курсора). Два коротких нажатия одной и той же клавиши Shift. Работает и после пробела. Набор заглавных букв не запускает исправление.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            card {
+                HStack {
+                    rowTitle("Флаг раскладки у поля", subtitle: "Маленькая подсказка при получении фокуса. Исчезает с началом ввода и не перехватывает нажатия.", symbol: "flag")
+                    Spacer()
+                    Toggle("Флаг раскладки у поля", isOn: Binding(get: { model.showLayoutHint }, set: model.setShowLayoutHint))
+                        .labelsHidden().toggleStyle(.switch)
+                }
+                Text("Защищённые и недоступные через Accessibility поля пропускаются.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             if !model.ready {
                 Button { model.page = .access } label: {
                     HStack { Image(systemName: "exclamationmark.shield"); Text("Проверьте разрешения macOS"); Spacer(); Image(systemName: "arrow.right") }

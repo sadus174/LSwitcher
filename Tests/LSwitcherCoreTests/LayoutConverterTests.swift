@@ -37,6 +37,16 @@ let coldLoadMilliseconds = Double(DispatchTime.now().uptimeNanoseconds-coldStart
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else { fatalError(message) }
 }
+var hint = FocusHintState()
+expect(hint.shouldShow(focusChanged: true), "Show hint before typing")
+hint.didType()
+expect(!hint.shouldShow(focusChanged: false), "Hide hint on typing")
+expect(!hint.shouldShow(focusChanged: false), "Layout change must not redisplay after typing")
+expect(hint.shouldShow(focusChanged: true), "New field shows hint again")
+hint.didType()
+expect(!hint.shouldShow(focusChanged: true), "Typing before focus detection suppresses hint")
+hint.reset()
+expect(hint.shouldShow(focusChanged: true), "Reenabling hint resets focus state")
 let signingKey = Curve25519.Signing.PrivateKey()
 let hash = String(repeating: "a", count: 64)
 let unsigned = UpdatePackage(version: "0.4.0", architecture: UpdatePackage.architecture,

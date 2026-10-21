@@ -75,9 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.appearsDisabled = !model.enabled || !model.ready
         statusItem?.button?.toolTip = model.ready ? "LSwitcher · Shift × 2" : "LSwitcher · Проверьте разрешения"
     }
-    @objc private func willSleep() { model.engine.suspend() }
+    @objc private func willSleep() { model.engine.suspend(); model.focusHint.setAllowed(false) }
     @objc private func didWake() { model.engine.reset(); model.retry() }
-    @objc private func applicationChanged() { model.engine.reset(); AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication) }
+    @objc private func applicationChanged() { model.engine.reset(); model.focusHint.reset(); AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication) }
     @objc private func toggleEnabled() { model.setEnabled(!model.enabled) }
     @objc private func toggleAutomatic() { model.setAutomatic(!model.automatic) }
     @objc private func showAbout() { model.page = .about; showSettings() }

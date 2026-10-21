@@ -20,12 +20,14 @@ extension AppModel {
             let originalAutomatic = automatic
             let originalShiftMode = shiftMode
             let originalWords = neverCorrect
+            let originalHint = showLayoutHint
             defer {
                 Preferences.shared.exclusions = originalExclusions
                 setEnabled(originalEnabled)
                 setAutomatic(originalAutomatic)
                 setShiftMode(originalShiftMode)
                 setNeverCorrect(originalWords)
+                setShowLayoutHint(originalHint)
                 testing = false
                 refresh()
             }
@@ -68,6 +70,22 @@ extension AppModel {
                     testResults += "✓ \(name)\n"
                     checks += 1
                 }
+                setShowLayoutHint(true)
+                focusHint.reset(); focusHint.refresh()
+                guard focusHint.visible, CFEqual(field, try testField()) else {
+                    throw SmokeFailure.message("Флаг не появился или поле потеряло фокус")
+                }
+                testResults += "✓ Флаг при фокусе без перехвата ввода\n"; checks += 1
+                setShowLayoutHint(false)
+                guard !focusHint.visible else { throw SmokeFailure.message("Флаг не отключился") }
+                testResults += "✓ Отключение флага в настройках\n"; checks += 1
+                setShowLayoutHint(true)
+                focusHint.refresh()
+                try await type("x", field: field)
+                try await delay(0.1)
+                guard !focusHint.visible else { throw SmokeFailure.message("Флаг не скрылся при вводе") }
+                testResults += "✓ Флаг скрывается после первого ввода\n"; checks += 1
+
                 try await clear(field)
                 try await type("ghbdtn", field: field)
                 try await shiftPair(right: true, field: field)

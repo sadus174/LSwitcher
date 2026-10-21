@@ -7,12 +7,14 @@ import LSwitcherCore
 @MainActor
 final class AppModel: ObservableObject {
     let engine = KeyboardEngine()
+    let focusHint = FocusLayoutHint()
     @Published var page = SettingsPage.general
     @Published var testing = false
     @Published var testResults = ""
     @Published var testEditorID = "com.apple.TextEdit"
     @Published var enabled = Preferences.shared.enabled
     @Published var automatic = Preferences.shared.automatic
+    @Published var showLayoutHint = Preferences.shared.showLayoutHint
     @Published var shiftMode = Preferences.shared.shiftMode
     @Published var neverCorrect = Preferences.shared.neverCorrect
     @Published var excludedIDs: [String] = []
@@ -33,6 +35,7 @@ final class AppModel: ObservableObject {
         _ = LayoutConverter.prepareLexicon()
         loadExclusions()
         engine.statusChanged = { [weak self] in self?.refresh() }
+        engine.typingObserved = { [weak self] in self?.focusHint.didType() }
         engine.start()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -50,11 +53,15 @@ final class AppModel: ObservableObject {
         manualCount = engine.manualCorrections
         autoCount = engine.automaticCorrections
         diagnostic = engine.diagnostic
+        focusHint.setAllowed(enabled && showLayoutHint && accessibility && listening && running)
         changed?()
     }
     func retry() { engine.start(); refresh() }
     func setEnabled(_ value: Bool) {
-        enabled = value; Preferences.shared.enabled = value; engine.reset(); changed?()
+        enabled = value; Preferences.shared.enabled = value; engine.reset(); refresh()
+    }
+    func setShowLayoutHint(_ value: Bool) {
+        showLayoutHint = value; Preferences.shared.showLayoutHint = value; refresh()
     }
     func setAutomatic(_ value: Bool) {
         automatic = value; Preferences.shared.automatic = value; engine.reset(); changed?()

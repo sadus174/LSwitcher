@@ -18,6 +18,10 @@ final class Preferences {
         get { defaults.object(forKey: "enabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "enabled") }
     }
+    var showLayoutHint: Bool {
+        get { defaults.object(forKey: "showLayoutHint") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "showLayoutHint") }
+    }
     var shiftMode: String {
         get { defaults.string(forKey: "shiftMode") ?? "both" }
         set { defaults.set(newValue, forKey: "shiftMode") }
@@ -55,6 +59,7 @@ final class KeyboardEngine {
     private(set) var automaticCorrections = 0
     private(set) var diagnostic = "Ожидание ввода"
     var statusChanged: (() -> Void)?
+    var typingObserved: (() -> Void)?
     var running: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
 
     func start() {
@@ -98,6 +103,10 @@ final class KeyboardEngine {
         }
         guard event.getIntegerValueField(.eventSourceUserData) != injectedEventTag else {
             return Unmanaged.passUnretained(event)
+        }
+        if type == .keyDown, event.flags.intersection([.maskCommand, .maskControl]).isEmpty,
+           ![48, 115, 116, 119, 121, 123, 124, 125, 126].contains(Int(event.getIntegerValueField(.keyboardEventKeycode))) {
+            typingObserved?()
         }
         eventsReceived += 1
         guard type == .keyDown || type == .flagsChanged else { reset(); return Unmanaged.passUnretained(event) }
