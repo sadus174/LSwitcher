@@ -22,6 +22,8 @@ extension AppModel {
             let originalWords = neverCorrect
             let originalHint = showLayoutHint
             defer {
+                engine.smokeTerminalBundleID = nil
+                engine.reset()
                 Preferences.shared.exclusions = originalExclusions
                 setEnabled(originalEnabled)
                 setAutomatic(originalAutomatic)
@@ -185,6 +187,24 @@ extension AppModel {
                 try await clear(field)
                 try await type("hello ", field: field)
                 try await verify("Правильное слово не изменяется", expected: "hello ")
+                // Exercise the same AX-free input path as Termius in a disposable editor.
+                engine.smokeTerminalBundleID = testEditorID
+                for right in [true, false] {
+                    try await clear(field)
+                    try await type("ghbdtn", field: field)
+                    try await shiftPair(right: right, field: field)
+                    try await verify("Терминальный режим: двойной \(right ? "правый" : "левый") Shift", expected: "привет")
+                }
+                try await clear(field)
+                try await type("ghbdtn", field: field)
+                try await press(123, field: field)
+                try await shiftPair(right: true, field: field)
+                try await verify("Терминальный режим: сброс при перемещении курсора", expected: "ghbdtn")
+                Preferences.shared.exclusions = ""
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await verify("Терминальный режим: автоисправление", expected: "привет ")
+                engine.smokeTerminalBundleID = nil
                 testResults += "\nВсе \(checks) проверок пройдены. Настройки восстановлены."
             } catch { testResults += "\n\(error.localizedDescription)" }
         }

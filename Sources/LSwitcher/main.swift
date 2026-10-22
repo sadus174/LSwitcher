@@ -3,6 +3,7 @@ import AppKit
 import Carbon
 import LSwitcherCore
 import UniformTypeIdentifiers
+import Darwin
 
 private let injectedEventTag: Int64 = 0x4C535749
 
@@ -55,6 +56,11 @@ final class KeyboardEngine {
     private var undoElement: AXUIElement?
     private var focusedElement: AXUIElement?
     private var lastPID: pid_t = 0
+    var smokeTerminalBundleID: String?
+    private func isTermius(_ app: NSRunningApplication) -> Bool {
+        (smokeTerminalBundleID != nil && smokeTerminalBundleID == app.bundleIdentifier) ||
+        ["com.termius-dmg.mac", "com.termius.mac"].contains(app.bundleIdentifier ?? "")
+    }
     private var doubleShift = DoubleShiftDetector()
     private var leftDoubleShift = DoubleShiftDetector()
     private(set) var generation = 0
@@ -173,9 +179,23 @@ final class KeyboardEngine {
                         guard let self, Preferences.shared.enabled, !IsSecureEventInputEnabled(),
                               let current = NSWorkspace.shared.frontmostApplication,
                               current.bundleIdentifier == app.bundleIdentifier,
-                              (app.processIdentifier <= 0 || current.processIdentifier <= 0 || current.processIdentifier == app.processIdentifier),
-                              let element = self.focusedInput(for: current) else { return }
-                        self.correctManually(element: element)
+                              (app.processIdentifier <= 0 || current.processIdentifier <= 0 || current.processIdentifier == app.processIdentifier) else { return }
+                        if self.isTermius(current) {
+                            // Terminal AX values include output, not an editable command line.
+                            // Only replace the unsubmitted word observed in this session.
+                            guard self.lastPID == current.processIdentifier, !self.word.isEmpty else {
+                                self.diagnostic = "Termius: сначала наберите слово; выделение терминала не заменяется"
+                                return
+                            }
+                            let replacement = LayoutConverter.convert(self.word)
+                            self.replace(count: self.word.count, with: replacement)
+                            self.selectLayout(for: replacement)
+                            self.word = ""
+                            self.manualCorrections += 1
+                            self.diagnostic = "Ручное исправление отправлено"
+                        } else if let element = self.focusedInput(for: current) {
+                            self.correctManually(element: element)
+                        }
                     }
                 }
             } else { doubleShift.cancel(); leftDoubleShift.cancel() }
@@ -183,8 +203,10 @@ final class KeyboardEngine {
         }
         doubleShift.cancel()
         leftDoubleShift.cancel()
-        guard let element = focusedInput(for: app) else { word = ""; return Unmanaged.passUnretained(event) }
-        if lastPID != app.processIdentifier || focusedElement.map({ !CFEqual($0, element) }) != false {
+        let terminal = isTermius(app)
+        let element = terminal ? nil : focusedInput(for: app)
+        guard terminal || element != nil else { word = ""; return Unmanaged.passUnretained(event) }
+        if lastPID != app.processIdentifier || (!terminal && (focusedElement == nil || !CFEqual(focusedElement!, element!))) {
             word = ""; protectedToken = false; undo = nil; undoElement = nil
         }
         lastPID = app.processIdentifier
@@ -192,7 +214,7 @@ final class KeyboardEngine {
         if !modifiers.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty {
             word = ""; undo = nil; undoElement = nil; return Unmanaged.passUnretained(event)
         }
-        if code == 51, modifiers.isEmpty, let pending = undo, let undoElement, CFEqual(undoElement, element),
+        if code == 51, modifiers.isEmpty, let element, let pending = undo, let undoElement, CFEqual(undoElement, element),
            let state = textState(element), pending.matches(text: state.text, caret: state.range.location,
                 selectionLength: state.range.length, time: ProcessInfo.processInfo.systemUptime) {
             undo = nil; self.undoElement = nil
@@ -223,7 +245,7 @@ final class KeyboardEngine {
                text == " " || text == "\r" || text == "\t",
                let replacement = LayoutConverter.automaticReplacement(for: word) {
                 // Only offer undo when the caret and source suffix can be verified.
-                if text == " ", let state = textState(element), state.range.length == 0,
+                if text == " ", let element, let state = textState(element), state.range.length == 0,
                    let end = String.Index(utf16Offset: state.range.location, in: state.text).samePosition(in: state.text),
                    state.text[..<end].suffix(word.count).lowercased() == word.lowercased() {
                     undo = CorrectionUndo(original: word, replacement: replacement, delimiter: text,
@@ -355,6 +377,21 @@ final class KeyboardEngine {
     }
 }
 
+// A per-user advisory lock is atomic even when two copies launch together.
+// Keep the descriptor open until process exit; never unlink a live lock file.
+let instanceDirectory = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Application Support/LSwitcher", isDirectory: true)
+try FileManager.default.createDirectory(at: instanceDirectory, withIntermediateDirectories: true)
+let instanceLock = open(instanceDirectory.appendingPathComponent("instance.lock").path,
+    O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
+guard instanceLock >= 0 else { exit(1) }
+guard flock(instanceLock, LOCK_EX | LOCK_NB) == 0 else {
+    if let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "com.lswitcher.app")
+        .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
+        existing.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    }
+    exit(0)
+}
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
