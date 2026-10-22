@@ -58,9 +58,10 @@ final class KeyboardEngine {
     private var lastPID: pid_t = 0
     var smokeTerminalBundleID: String?
     var smokeSearchBundleID: String?
-    private func isSearchOverlay(_ app: NSRunningApplication) -> Bool {
+    private func isSearchOverlay(_ app: NSRunningApplication, element: AXUIElement? = nil) -> Bool {
         app.bundleIdentifier == "com.apple.Spotlight" ||
-        (smokeSearchBundleID != nil && smokeSearchBundleID == app.bundleIdentifier)
+        (smokeSearchBundleID != nil && smokeSearchBundleID == app.bundleIdentifier) ||
+        element.map(AccessibilityFocus.isSearchField) == true
     }
     private func isTermius(_ app: NSRunningApplication) -> Bool {
         (smokeTerminalBundleID != nil && smokeTerminalBundleID == app.bundleIdentifier) ||
@@ -76,6 +77,7 @@ final class KeyboardEngine {
     private(set) var manualCorrections = 0
     private(set) var automaticCorrections = 0
     private(set) var diagnostic = "Ожидание ввода"
+    private(set) var inputTarget = "—"
     var statusChanged: (() -> Void)?
     var typingObserved: (() -> Void)?
     var running: Bool {
@@ -149,12 +151,11 @@ final class KeyboardEngine {
         eventsReceived += 1
         guard type == .keyDown || type == .flagsChanged else { reset(); return Unmanaged.passUnretained(event) }
         let preferences = Preferences.shared
-        guard preferences.enabled,
+        guard preferences.enabled, !IsSecureEventInputEnabled(),
               let app = AccessibilityFocus.keyboardApplication(timeout: 0.04),
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
               !(app.bundleIdentifier ?? "").hasPrefix("com.1password."),
-              app.bundleIdentifier != "com.agilebits.onepassword7",
-              !IsSecureEventInputEnabled() else {
+              app.bundleIdentifier != "com.agilebits.onepassword7" else {
             reset(); return Unmanaged.passUnretained(event)
         }
         let code = event.getIntegerValueField(.keyboardEventKeycode)
@@ -186,6 +187,7 @@ final class KeyboardEngine {
                               current.bundleIdentifier == app.bundleIdentifier,
                               (app.processIdentifier <= 0 || current.processIdentifier <= 0 || current.processIdentifier == app.processIdentifier) else { return }
                         if self.isTermius(current) {
+                            self.inputTarget = AccessibilityFocus.description(app: current, element: nil)
                             // Terminal AX values include output, not an editable command line.
                             // Only replace the unsubmitted word observed in this session.
                             guard self.lastPID == current.processIdentifier, !self.word.isEmpty else {
@@ -199,7 +201,8 @@ final class KeyboardEngine {
                             self.manualCorrections += 1
                             self.diagnostic = "Ручное исправление отправлено"
                         } else if let element = self.focusedInput(for: current) {
-                            if self.isSearchOverlay(current) { self.correctSearchManually(element: element) }
+                            self.inputTarget = AccessibilityFocus.description(app: current, element: element)
+                            if self.isSearchOverlay(current, element: element) { self.correctSearchManually(element: element) }
                             else { self.correctManually(element: element) }
                         }
                     }
@@ -224,7 +227,7 @@ final class KeyboardEngine {
            let state = textState(element), pending.matches(text: state.text, caret: state.range.location,
                 selectionLength: state.range.length, time: ProcessInfo.processInfo.systemUptime) {
             undo = nil; self.undoElement = nil
-            if isSearchOverlay(app) {
+            if isSearchOverlay(app, element: element) {
                 guard let edit = SearchFieldEdit.suffix(text: state.text,
                     selection: NSRange(location: state.range.location, length: state.range.length),
                     original: pending.replacement + pending.delimiter, replacement: pending.original + pending.delimiter),
@@ -255,7 +258,8 @@ final class KeyboardEngine {
             if preferences.automatic, !protectedToken, !preferences.protects(word), !preferences.excludes(app.bundleIdentifier ?? ""),
                text == " " || text == "\r" || text == "\t",
                let replacement = LayoutConverter.automaticReplacement(for: word) {
-                if isSearchOverlay(app), let element {
+                inputTarget = AccessibilityFocus.description(app: app, element: element)
+                if let element, isSearchOverlay(app, element: element) {
                     // Do not replay Space/Enter into an asynchronously updated search field.
                     // Space is part of the atomic edit; Enter/Tab pass through untouched.
                     guard text == " ", let state = textState(element),
@@ -334,7 +338,7 @@ final class KeyboardEngine {
               valueSettable.boolValue,
               AXUIElementIsAttributeSettable(element, kAXSelectedTextRangeAttribute as CFString, &rangeSettable) == .success,
               rangeSettable.boolValue,
-              let app = AccessibilityFocus.keyboardApplication(timeout: 0.04), isSearchOverlay(app),
+              let app = AccessibilityFocus.keyboardApplication(timeout: 0.04), isSearchOverlay(app, element: element),
               let current = focusedInput(for: app), CFEqual(current, element),
               let verified = textState(element), verified.text == source.text,
               verified.range.location == source.range.location, verified.range.length == source.range.length else {

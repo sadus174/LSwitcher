@@ -273,6 +273,7 @@ struct SettingsView: View {
                     metric("Автоматически", value: model.autoCount)
                 }
                 Text(model.diagnostic).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Последняя цель: \(model.inputTarget)").font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("Только счётчики за текущий запуск. Набранный текст не записывается и никуда не отправляется.")
                     .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 Divider()
@@ -280,6 +281,7 @@ struct SettingsView: View {
                     Text("TextEdit").tag("com.apple.TextEdit")
                     Text("Safari").tag("com.apple.Safari")
                     Text("Chrome").tag("com.google.Chrome")
+                    Text("Spotlight · пустой поиск").tag("com.apple.Spotlight")
                 }.disabled(model.testing)
                 HStack {
                     Button(model.testing ? "Идёт проверка…" : "Проверить ввод", action: model.runSmokeTest)

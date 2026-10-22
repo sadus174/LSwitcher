@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 
 private enum SmokeFailure: LocalizedError {
     case message(String)
@@ -9,6 +10,7 @@ private enum SmokeFailure: LocalizedError {
 @MainActor
 extension AppModel {
     func runSmokeTest() {
+        if testEditorID == "com.apple.Spotlight" { runSpotlightSmokeTest(); return }
         guard !testing else { return }
         refresh()
         guard ready else { testResults = "Сначала разрешите доступ и запустите обработчик."; return }
@@ -251,9 +253,85 @@ extension AppModel {
         }
     }
 
+    private func runSpotlightSmokeTest() {
+        guard !testing else { return }
+        refresh()
+        guard ready else { testResults = "Сначала разрешите доступ и запустите обработчик."; return }
+        testing = true
+        testResults = "Открываю Spotlight. Ввод разрешён только в пустую проверенную строку поиска…"
+        Task { @MainActor in
+            let originalEnabled = enabled, originalAutomatic = automatic, originalShift = shiftMode
+            let originalLayout = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
+            defer {
+                engine.reset()
+                setEnabled(originalEnabled); setAutomatic(originalAutomatic); setShiftMode(originalShift)
+                if let originalLayout { TISSelectInputSource(originalLayout) }
+                testing = false; refresh()
+            }
+            do {
+                setEnabled(true); setAutomatic(false); setShiftMode("both")
+                // Global hotkeys must enter the HID stream, rather than an app-targeted queue.
+                for down in [true, false] {
+                    let event = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: down)!
+                    event.flags = .maskCommand
+                    event.post(tap: .cghidEventTap)
+                    try await delay(0.05)
+                }
+                var candidate: AXUIElement?
+                for _ in 0..<30 {
+                    try await delay(0.1)
+                    if let field = try? testField() { candidate = field; break }
+                }
+                guard let field = candidate else { throw SmokeFailure.message("Spotlight не получил доступный фокус. Тестовый ввод не отправлен.") }
+                guard try read(field).isEmpty else {
+                    throw SmokeFailure.message("Строка Spotlight не пуста. Очистите её вручную и повторите тест. Текущий запрос не изменён.")
+                }
+                testResults = ""
+                let filter = [kTISPropertyInputSourceCategory!: kTISCategoryKeyboardInputSource!,
+                              kTISPropertyInputSourceIsSelectCapable!: true] as CFDictionary
+                guard let sources = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource],
+                      let english = sources.first(where: { source in
+                        guard let pointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages) else { return false }
+                        return (Unmanaged<CFArray>.fromOpaque(pointer).takeUnretainedValue() as NSArray).contains("en")
+                      }) else { throw SmokeFailure.message("Для теста нужна английская раскладка") }
+                for right in [true, false] {
+                    TISSelectInputSource(english)
+                    try await delay(0.2)
+                    try await clear(field)
+                    for code: CGKeyCode in [5, 4, 11, 34, 17, 45] { try await press(code, field: field) }
+                    try await delay(0.3)
+                    guard try searchTypedPrefix(field) == "ghbdtn" else {
+                        throw SmokeFailure.message("Spotlight не принял тестовое слово. Текст запроса не включён в диагностику.")
+                    }
+                    try await shiftPair(right: right, field: field)
+                    try await delay(0.5)
+                    guard try searchTypedPrefix(field) == "привет" else {
+                        throw SmokeFailure.message("Spotlight: результат замены отличается от ожидаемого. Механизм: \(engine.diagnostic). Текст запроса не включён в диагностику.")
+                    }
+                    testResults += "✓ Реальный Spotlight: \(right ? "правый" : "левый") Shift\n"
+                }
+                try await clear(field)
+                testResults += "Проверки реального Spotlight пройдены. Настройки и раскладка восстановлены."
+            } catch { testResults += "\n\(error.localizedDescription)" }
+        }
+    }
+
+    private func searchTypedPrefix(_ field: AXUIElement) throws -> String {
+        let text = try read(field)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(field, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return text }
+        var range = CFRange()
+        guard AXValueGetValue(unsafeDowncast(value, to: AXValue.self), .cfRange, &range),
+              range.location >= 0, range.length > 0, range.location <= text.utf16.count,
+              range.length == text.utf16.count - range.location,
+              let selected = Range(NSRange(location: range.location, length: range.length), in: text) else { return text }
+        return String(text[..<selected.lowerBound])
+    }
+
     private func delay(_ seconds: Double) async throws { try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
     private func testField() throws -> AXUIElement {
-        guard let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier == testEditorID else {
+        guard let app = AccessibilityFocus.keyboardApplication(timeout: 1), app.bundleIdentifier == testEditorID else {
             throw SmokeFailure.message("Фокус ушёл из тестового редактора. Тест остановлен, ввод не отправлен.")
         }
         let result = AccessibilityFocus.element(app: app, timeout: 1)

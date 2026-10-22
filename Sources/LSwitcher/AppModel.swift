@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     @Published var manualCount = 0
     @Published var autoCount = 0
     @Published var diagnostic = "Ожидание ввода"
+    @Published var inputTarget = "—"
     private var timer: Timer?
     var changed: (() -> Void)?
     var ready: Bool { accessibility && listening && posting && running && !sessionSuspended && !secureInput }
@@ -62,6 +63,7 @@ final class AppModel: ObservableObject {
         manualCount = engine.manualCorrections
         autoCount = engine.automaticCorrections
         diagnostic = engine.diagnostic
+        inputTarget = engine.inputTarget
         focusHint.setAllowed(enabled && showLayoutHint && ready)
         changed?()
     }
