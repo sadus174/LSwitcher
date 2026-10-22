@@ -18,6 +18,24 @@ enum AccessibilityFocus {
         }
     }
 
+    /// Spotlight can own keyboard focus while NSWorkspace still reports the app behind it.
+    /// Only this known system overlay is allowed to override the workspace owner.
+    static func keyboardApplication(timeout: Float) -> NSRunningApplication? {
+        let foreground = NSWorkspace.shared.frontmostApplication
+        guard foreground?.bundleIdentifier != "com.apple.Spotlight",
+              !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Spotlight").isEmpty else { return foreground }
+        let root = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(root, timeout)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return foreground }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(unsafeDowncast(value, to: AXUIElement.self), &pid) == .success,
+              pid > 0, let owner = NSRunningApplication(processIdentifier: pid),
+              owner.bundleIdentifier == "com.apple.Spotlight" else { return foreground }
+        return owner
+    }
+
     /// Resolve actual keyboard focus rather than relying exclusively on a cached
     /// NSWorkspace application object during activation or a document launch.
     static func element(app: NSRunningApplication, timeout: Float) -> (element: AXUIElement?, error: AXError) {

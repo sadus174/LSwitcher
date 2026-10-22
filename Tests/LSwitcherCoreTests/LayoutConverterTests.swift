@@ -168,3 +168,17 @@ if CommandLine.arguments.contains("--evaluate") {
     expect(parityFailures == 0, "Native decisions must match selected offline policy")
     expect(times[times.count*99/100] < 1_000_000, "Warm p99 correction must stay below 1ms")
 }
+
+let searchWord = SearchFieldEdit.manual(text: "ghbdtn", selection: NSRange(location: 6, length: 0), typedWord: "ghbdtn")!
+expect(searchWord.text == "привет" && searchWord.caret == 6, "Search word corrected atomically")
+let searchCompletion = SearchFieldEdit.manual(text: "ghbdtn suggestion", selection: NSRange(location: 6, length: 11), typedWord: "ghbdtn")!
+expect(searchCompletion.text == "привет" && searchCompletion.caret == 6, "Search inline completion dropped")
+let searchSelection = SearchFieldEdit.manual(text: "ghbdtn vbh", selection: NSRange(location: 0, length: 10), typedWord: "")!
+expect(searchSelection.text == "привет мир", "Explicit search selection converted")
+let searchPrefix = SearchFieldEdit.manual(text: "🔎 ghbdtn  tail", selection: NSRange(location: 11, length: 0), typedWord: "")!
+expect(searchPrefix.text == "🔎 привет  tail" && searchPrefix.caret == 11, "Search UTF16 prefix, suffix and spaces preserved")
+let searchAuto = SearchFieldEdit.suffix(text: "ghbdtn suggestion", selection: NSRange(location: 6, length: 11), original: "ghbdtn", replacement: "привет ")!
+expect(searchAuto.text == "привет " && searchAuto.caret == 7, "Search automatic delimiter applied in same edit")
+expect(SearchFieldEdit.suffix(text: "other", selection: NSRange(location: 5, length: 0), original: "ghbdtn", replacement: "привет") == nil, "Search stale word rejected")
+expect(SearchFieldEdit.manual(text: "a", selection: NSRange(location: 2, length: 0), typedWord: "") == nil, "Search invalid caret rejected")
+expect(SearchFieldEdit.manual(text: "😀", selection: NSRange(location: 1, length: 0), typedWord: "") == nil, "Search split surrogate rejected")

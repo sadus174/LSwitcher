@@ -57,6 +57,11 @@ final class KeyboardEngine {
     private var focusedElement: AXUIElement?
     private var lastPID: pid_t = 0
     var smokeTerminalBundleID: String?
+    var smokeSearchBundleID: String?
+    private func isSearchOverlay(_ app: NSRunningApplication) -> Bool {
+        app.bundleIdentifier == "com.apple.Spotlight" ||
+        (smokeSearchBundleID != nil && smokeSearchBundleID == app.bundleIdentifier)
+    }
     private func isTermius(_ app: NSRunningApplication) -> Bool {
         (smokeTerminalBundleID != nil && smokeTerminalBundleID == app.bundleIdentifier) ||
         ["com.termius-dmg.mac", "com.termius.mac"].contains(app.bundleIdentifier ?? "")
@@ -145,7 +150,7 @@ final class KeyboardEngine {
         guard type == .keyDown || type == .flagsChanged else { reset(); return Unmanaged.passUnretained(event) }
         let preferences = Preferences.shared
         guard preferences.enabled,
-              let app = NSWorkspace.shared.frontmostApplication,
+              let app = AccessibilityFocus.keyboardApplication(timeout: 0.04),
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
               !(app.bundleIdentifier ?? "").hasPrefix("com.1password."),
               app.bundleIdentifier != "com.agilebits.onepassword7",
@@ -177,7 +182,7 @@ final class KeyboardEngine {
                     // Release the event tap before making cross-process Accessibility calls.
                     DispatchQueue.main.async { [weak self] in
                         guard let self, Preferences.shared.enabled, !IsSecureEventInputEnabled(),
-                              let current = NSWorkspace.shared.frontmostApplication,
+                              let current = AccessibilityFocus.keyboardApplication(timeout: 0.04),
                               current.bundleIdentifier == app.bundleIdentifier,
                               (app.processIdentifier <= 0 || current.processIdentifier <= 0 || current.processIdentifier == app.processIdentifier) else { return }
                         if self.isTermius(current) {
@@ -194,7 +199,8 @@ final class KeyboardEngine {
                             self.manualCorrections += 1
                             self.diagnostic = "Ручное исправление отправлено"
                         } else if let element = self.focusedInput(for: current) {
-                            self.correctManually(element: element)
+                            if self.isSearchOverlay(current) { self.correctSearchManually(element: element) }
+                            else { self.correctManually(element: element) }
                         }
                     }
                 }
@@ -218,7 +224,12 @@ final class KeyboardEngine {
            let state = textState(element), pending.matches(text: state.text, caret: state.range.location,
                 selectionLength: state.range.length, time: ProcessInfo.processInfo.systemUptime) {
             undo = nil; self.undoElement = nil
-            replace(count: pending.replacement.count + pending.delimiter.count, with: pending.original + pending.delimiter)
+            if isSearchOverlay(app) {
+                guard let edit = SearchFieldEdit.suffix(text: state.text,
+                    selection: NSRange(location: state.range.location, length: state.range.length),
+                    original: pending.replacement + pending.delimiter, replacement: pending.original + pending.delimiter),
+                    applySearchEdit(edit, element: element, source: state) else { return Unmanaged.passUnretained(event) }
+            } else { replace(count: pending.replacement.count + pending.delimiter.count, with: pending.original + pending.delimiter) }
             selectLayout(for: pending.original)
             word = ""; protectedToken = false
             diagnostic = "Автоисправление отменено"
@@ -244,6 +255,26 @@ final class KeyboardEngine {
             if preferences.automatic, !protectedToken, !preferences.protects(word), !preferences.excludes(app.bundleIdentifier ?? ""),
                text == " " || text == "\r" || text == "\t",
                let replacement = LayoutConverter.automaticReplacement(for: word) {
+                if isSearchOverlay(app), let element {
+                    // Do not replay Space/Enter into an asynchronously updated search field.
+                    // Space is part of the atomic edit; Enter/Tab pass through untouched.
+                    guard text == " ", let state = textState(element),
+                          let edit = SearchFieldEdit.suffix(text: state.text,
+                            selection: NSRange(location: state.range.location, length: state.range.length),
+                            original: word, replacement: replacement + " "),
+                          applySearchEdit(edit, element: element, source: state) else {
+                        word = ""; protectedToken = false
+                        return Unmanaged.passUnretained(event)
+                    }
+                    undo = CorrectionUndo(original: word, replacement: replacement, delimiter: " ",
+                        caret: edit.caret, time: ProcessInfo.processInfo.systemUptime)
+                    undoElement = element
+                    automaticCorrections += 1
+                    diagnostic = "Поиск: автоисправление одной операцией"
+                    selectLayout(for: replacement)
+                    word = ""; protectedToken = false
+                    return nil
+                }
                 // Only offer undo when the caret and source suffix can be verified.
                 if text == " ", let element, let state = textState(element), state.range.length == 0,
                    let end = String.Index(utf16Offset: state.range.location, in: state.text).samePosition(in: state.text),
@@ -283,6 +314,44 @@ final class KeyboardEngine {
         return element
     }
 
+    private func correctSearchManually(element: AXUIElement) {
+        guard let state = textState(element),
+              let edit = SearchFieldEdit.manual(text: state.text,
+                selection: NSRange(location: state.range.location, length: state.range.length), typedWord: word),
+              applySearchEdit(edit, element: element, source: state) else {
+            word = ""; return
+        }
+        selectLayout(for: edit.replacement)
+        manualCorrections += 1
+        diagnostic = "Поиск: ручное исправление одной операцией"
+        word = ""; protectedToken = false
+    }
+
+    private func applySearchEdit(_ edit: SearchFieldEdit, element: AXUIElement,
+                                 source: (text: String, range: CFRange)) -> Bool {
+        var valueSettable = DarwinBoolean(false), rangeSettable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable) == .success,
+              valueSettable.boolValue,
+              AXUIElementIsAttributeSettable(element, kAXSelectedTextRangeAttribute as CFString, &rangeSettable) == .success,
+              rangeSettable.boolValue,
+              let app = AccessibilityFocus.keyboardApplication(timeout: 0.04), isSearchOverlay(app),
+              let current = focusedInput(for: app), CFEqual(current, element),
+              let verified = textState(element), verified.text == source.text,
+              verified.range.location == source.range.location, verified.range.length == source.range.length else {
+            diagnostic = "Поиск: поле изменилось или не поддерживает безопасную замену"
+            return false
+        }
+        guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, edit.text as CFString) == .success else {
+            diagnostic = "Поиск: замена недоступна"; return false
+        }
+        var caret = CFRange(location: edit.caret, length: 0)
+        if let value = AXValueCreate(.cfRange, &caret) {
+            AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value)
+        }
+        // Once AX accepts the text, never fall back to key injection: doing so duplicates input.
+        return true
+    }
+
     private func correctManually(element: AXUIElement) {
         var selected: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selected)
@@ -312,7 +381,8 @@ final class KeyboardEngine {
               let selection, CFGetTypeID(selection) == AXValueGetTypeID() else { return nil }
         var range = CFRange()
         guard AXValueGetValue(unsafeDowncast(selection, to: AXValue.self), .cfRange, &range),
-              range.location >= 0, range.location <= text.utf16.count else { return nil }
+              range.location >= 0, range.location <= text.utf16.count,
+              range.length >= 0, range.length <= text.utf16.count - range.location else { return nil }
         return (text, range)
     }
 

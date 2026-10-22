@@ -66,7 +66,7 @@ final class FocusLayoutHint {
 
     func refresh() {
         guard timer != nil, Preferences.shared.enabled, Preferences.shared.showLayoutHint, AXIsProcessTrusted(),
-              !IsSecureEventInputEnabled(), let app = NSWorkspace.shared.frontmostApplication,
+              !IsSecureEventInputEnabled(), let app = AccessibilityFocus.keyboardApplication(timeout: 0.02),
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
               !(app.bundleIdentifier ?? "").hasPrefix("com.1password."),
               app.bundleIdentifier != "com.agilebits.onepassword7",

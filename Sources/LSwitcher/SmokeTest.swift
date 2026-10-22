@@ -23,6 +23,7 @@ extension AppModel {
             let originalHint = showLayoutHint
             defer {
                 engine.smokeTerminalBundleID = nil
+                engine.smokeSearchBundleID = nil
                 engine.reset()
                 Preferences.shared.exclusions = originalExclusions
                 setEnabled(originalEnabled)
@@ -205,6 +206,46 @@ extension AppModel {
                 try await type("ghbdtn ", field: field)
                 try await verify("Терминальный режим: автоисправление", expected: "привет ")
                 engine.smokeTerminalBundleID = nil
+                if testEditorID == "com.apple.TextEdit" {
+                    engine.smokeSearchBundleID = testEditorID
+                    for right in [true, false] {
+                        try await clear(field)
+                        try await type("ghbdtn", field: field)
+                        try await shiftPair(right: right, field: field)
+                        try await verify("Поиск: двойной \(right ? "правый" : "левый") Shift", expected: "привет")
+                    }
+                    try await clear(field)
+                    try await type("ghbdtn", field: field)
+                    // Model the selected suggestion inserted by a search provider.
+                    guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "ghbdtn suggestion" as CFString) == .success else {
+                        throw SmokeFailure.message("Не удалось подготовить поисковую подсказку")
+                    }
+                    try await delay(0.2)
+                    var completionRange = CFRange(location: 6, length: 11)
+                    guard let completion = AXValueCreate(.cfRange, &completionRange),
+                          AXUIElementSetAttributeValue(field, kAXSelectedTextRangeAttribute as CFString, completion) == .success else {
+                        throw SmokeFailure.message("Не удалось выделить поисковую подсказку")
+                    }
+                    try await delay(0.2)
+                    try await shiftPair(right: true, field: field)
+                    try await verify("Поиск: подсказка не оставляет лишние буквы", expected: "привет")
+                    try await type("!", field: field)
+                    try await verify("Поиск: курсор после исправленного слова", expected: "привет!")
+
+                    try await clear(field)
+                    setAutomatic(false)
+                    try await type("ghbdtn vbh", field: field)
+                    try await selectAll(field)
+                    try await shiftPair(right: true, field: field)
+                    try await verify("Поиск: выделенный запрос целиком", expected: "привет мир")
+                    setAutomatic(true)
+                    try await clear(field)
+                    try await type("ghbdtn ", field: field)
+                    try await verify("Поиск: автоисправление с пробелом одной операцией", expected: "привет ")
+                    try await press(51, field: field)
+                    try await verify("Поиск: отмена без серии Backspace", expected: "ghbdtn ")
+                    engine.smokeSearchBundleID = nil
+                }
                 testResults += "\nВсе \(checks) проверок пройдены. Настройки восстановлены."
             } catch { testResults += "\n\(error.localizedDescription)" }
         }
