@@ -6,10 +6,24 @@
 !/Sources/
 !/Resources/
 !/Tests/
+!/openspec/
+!/.agents/
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/openspec-*/
 
-# Credentials and local maintenance tools must never be committed.
+# Credentials, private maintenance tools and build output must never be committed.
 /keys/
-/scripts/
+!/scripts/
+/scripts/*
+!/scripts/build-dmg.sh
+!/scripts/release-preflight.sh
+!/scripts/sign-update.swift
+!/scripts/check-size.py
+!/scripts/test-updater.py
+!/scripts/test-release-workflow.py
+!/RELEASING.md
 /.build/
 /.upstream/
 /dist/

@@ -8,17 +8,19 @@ import Carbon
 @MainActor
 final class AppModel: ObservableObject {
     let engine = KeyboardEngine()
-    let focusHint = FocusLayoutHint()
+    let loginLaunch = LoginLaunch()
+    lazy var focusHint = FocusLayoutHint()
+    private let preferences: Preferences
     @Published var page = SettingsPage.general
     @Published var testing = false
     @Published var testResults = ""
     @Published var testEditorID = "com.apple.TextEdit"
-    @Published var enabled = Preferences.shared.enabled
-    @Published var automatic = Preferences.shared.automatic
-    @Published var statusIconStyle = Preferences.shared.statusIconStyle
-    @Published var showLayoutHint = Preferences.shared.showLayoutHint
-    @Published var shiftMode = Preferences.shared.shiftMode
-    @Published var neverCorrect = Preferences.shared.neverCorrect
+    @Published var enabled: Bool
+    @Published var automatic: Bool
+    @Published var statusIconStyle: StatusIconStyle
+    @Published var showLayoutHint: Bool
+    @Published var shiftMode: String
+    @Published var neverCorrect: String
     @Published var excludedIDs: [String] = []
     @Published var accessibility = false
     @Published var listening = false
@@ -33,13 +35,22 @@ final class AppModel: ObservableObject {
     @Published var autoCount = 0
     @Published var diagnostic = "Ожидание ввода"
     @Published var inputTarget = "—"
+    @Published private(set) var operationStatus: OperationStatus = .fieldUnknown
     private var timer: Timer?
     var changed: (() -> Void)?
     var ready: Bool { accessibility && listening && posting && running && !sessionSuspended && !secureInput }
 
-    init() {
+    init(preferences: Preferences = .shared, startInput: Bool = true) {
+        self.preferences = preferences
+        enabled = preferences.enabled
+        automatic = preferences.automatic
+        statusIconStyle = preferences.statusIconStyle
+        showLayoutHint = preferences.showLayoutHint
+        shiftMode = preferences.shiftMode
+        neverCorrect = preferences.neverCorrect
         _ = LayoutConverter.prepareLexicon()
         loadExclusions()
+        guard startInput else { return }
         engine.statusChanged = { [weak self] in self?.refresh() }
         engine.typingObserved = { [weak self] in self?.focusHint.didType() }
         engine.start()
@@ -64,8 +75,30 @@ final class AppModel: ObservableObject {
         autoCount = engine.automaticCorrections
         diagnostic = engine.diagnostic
         inputTarget = engine.inputTarget
+        refreshOperationStatus()
         focusHint.setAllowed(enabled && showLayoutHint && ready)
         changed?()
+    }
+    private func refreshOperationStatus() {
+        var field: FieldAvailability = .unknown
+        var appName = "приложение", excluded = false, protectedApp = false
+        var targetID: String?
+        if enabled, ready, let app = AccessibilityFocus.keyboardApplication(timeout: 0.04),
+           let identifier = app.bundleIdentifier {
+            targetID = identifier
+            if identifier != Bundle.main.bundleIdentifier {
+                appName = app.localizedName ?? identifier
+                protectedApp = InputProtection.protectsApplication(identifier)
+                excluded = preferences.excludes(identifier)
+                if !protectedApp { field = AccessibilityFocus.availability(app: app) }
+            }
+        }
+        engine.observeExclusionContext(applicationID: targetID, enabled: enabled,
+            secureInput: secureInput, suspended: sessionSuspended)
+        operationStatus = .resolve(enabled: enabled, suspended: sessionSuspended,
+            permissions: accessibility && listening && posting, secureInput: secureInput,
+            running: running, protectedApplication: protectedApp, excluded: excluded,
+            applicationName: appName, field: field, automatic: automatic)
     }
     func checkHealth() {
         if !sessionSuspended, AXIsProcessTrusted(), CGPreflightListenEventAccess(), CGPreflightPostEventAccess(), !IsSecureEventInputEnabled() {
@@ -85,34 +118,53 @@ final class AppModel: ObservableObject {
     }
     func retry() { guard !sessionSuspended else { return }; engine.rebuild(); refresh() }
     func setEnabled(_ value: Bool) {
-        enabled = value; Preferences.shared.enabled = value; engine.reset(); refresh()
+        enabled = value; preferences.enabled = value; engine.reset(); refresh()
     }
     func setStatusIconStyle(_ value: StatusIconStyle) {
-        statusIconStyle = value; Preferences.shared.statusIconStyle = value; changed?()
+        statusIconStyle = value; preferences.statusIconStyle = value; changed?()
     }
     func setShowLayoutHint(_ value: Bool) {
-        showLayoutHint = value; Preferences.shared.showLayoutHint = value; refresh()
+        showLayoutHint = value; preferences.showLayoutHint = value; refresh()
     }
     func setAutomatic(_ value: Bool) {
-        automatic = value; Preferences.shared.automatic = value; engine.reset(); changed?()
+        automatic = value; preferences.automatic = value; engine.reset(); refresh()
     }
     func setShiftMode(_ value: String) {
-        shiftMode = value; Preferences.shared.shiftMode = value; engine.reset()
+        shiftMode = value; preferences.shiftMode = value; engine.reset()
     }
     func setNeverCorrect(_ value: String) {
         neverCorrect = String(value.prefix(100_000))
-        Preferences.shared.neverCorrect = neverCorrect
+        preferences.neverCorrect = neverCorrect
         engine.reset()
     }
-    private func loadExclusions() {
-        excludedIDs = Array(Set(Preferences.shared.exclusions.split(whereSeparator: \.isNewline)
+    @discardableResult
+    func addPersonalWord(_ word: String) -> PersonalWords.Addition {
+        let result = PersonalWords.adding(word, to: neverCorrect)
+        if case .added(let updated) = result { setNeverCorrect(updated) }
+        return result
+    }
+    func loadExclusions() {
+        excludedIDs = Array(Set(preferences.exclusions.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })).sorted()
     }
     func removeExclusion(_ identifier: String) {
-        excludedIDs.removeAll { $0 == identifier }; saveExclusions()
+        setExcluded(identifier, excluded: false)
     }
-    private func saveExclusions() {
-        Preferences.shared.exclusions = excludedIDs.joined(separator: "\n"); engine.reset()
+    @discardableResult
+    func setExcluded(_ identifier: String, excluded: Bool) -> Bool {
+        let identifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !identifier.contains(where: { $0.isWhitespace || $0.isNewline }),
+              !identifier.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return false }
+        // Read the stored list as well: diagnostics/tests can change preferences directly.
+        loadExclusions()
+        var identifiers = Set(excludedIDs)
+        if excluded { identifiers.insert(identifier) } else { identifiers.remove(identifier) }
+        excludedIDs = identifiers.sorted()
+        preferences.exclusions = excludedIDs.joined(separator: "\n")
+        engine.reset()
+        refreshOperationStatus()
+        changed?()
+        return true
     }
     func addExclusion() {
         let panel = NSOpenPanel()
@@ -122,7 +174,7 @@ final class AppModel: ObservableObject {
         panel.prompt = "Добавить"
         panel.message = "В этом приложении останется только ручное исправление по двойному Shift."
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
-        if !excludedIDs.contains(id) { excludedIDs.append(id); excludedIDs.sort(); saveExclusions() }
+        setExcluded(id, excluded: true)
     }
     func appInfo(_ identifier: String) -> (String, NSImage) {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {

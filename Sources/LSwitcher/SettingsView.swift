@@ -74,8 +74,8 @@ struct SettingsView: View {
             Spacer()
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
-                    Circle().fill(model.ready ? Color.green : Color.orange).frame(width: 6, height: 6)
-                    Text(model.secureInput ? "Защищённый ввод" : model.sessionSuspended ? "Сессия приостановлена" : model.ready ? (model.enabled ? "Готов к работе" : "На паузе") : "Нужен доступ")
+                    Circle().fill((model.operationStatus == .automatic || model.operationStatus == .manualOnly) ? Color.green : Color.orange).frame(width: 6, height: 6)
+                    Text(model.operationStatus.message)
                         .font(.system(size: 12, weight: .medium))
                 }
                 Text("Русский ⇄ English").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -149,6 +149,7 @@ struct SettingsView: View {
                      : "Словарь недоступен. Автоисправление отключено; ручное переключение работает.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).padding(.leading, 38)
             }
+            card { LoginLaunchSettings(login: model.loginLaunch) }
             card {
                 HStack(alignment: .top) {
                     rowTitle("Исправить вручную", subtitle: "Слово перед курсором или выделенный текст", symbol: "keyboard")
@@ -182,7 +183,7 @@ struct SettingsView: View {
                 Text("Защищённые и недоступные через Accessibility поля пропускаются.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            if !model.ready {
+            if model.operationStatus == .permissionsRequired {
                 Button { model.page = .access } label: {
                     HStack { Image(systemName: "exclamationmark.shield"); Text("Проверьте разрешения macOS"); Spacer(); Image(systemName: "arrow.right") }
                         .padding(15).foregroundStyle(Color.orange).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -249,6 +250,7 @@ struct SettingsView: View {
     }
     private var access: some View {
         VStack(alignment: .leading, spacing: 18) {
+            Text(model.operationStatus.message).font(.system(size: 12, weight: .medium))
             card {
                 permissionRow("Универсальный доступ", detail: "Чтение выделения и замена текста", allowed: model.accessibility) { model.openAccess() }
                 Divider()
@@ -272,7 +274,7 @@ struct SettingsView: View {
                     metric("Вручную", value: model.manualCount)
                     metric("Автоматически", value: model.autoCount)
                 }
-                Text(model.diagnostic).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Последнее действие: \(model.diagnostic)").font(.system(size: 11)).foregroundStyle(.secondary)
                 Text("Последняя цель: \(model.inputTarget)").font(.system(size: 10)).foregroundStyle(.tertiary)
                 Text("Только счётчики за текущий запуск. Набранный текст не записывается и никуда не отправляется.")
                     .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)

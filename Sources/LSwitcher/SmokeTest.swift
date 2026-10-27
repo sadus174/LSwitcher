@@ -28,6 +28,7 @@ extension AppModel {
                 engine.smokeSearchBundleID = nil
                 engine.reset()
                 Preferences.shared.exclusions = originalExclusions
+                loadExclusions()
                 setEnabled(originalEnabled)
                 setAutomatic(originalAutomatic)
                 setShiftMode(originalShiftMode)
@@ -40,6 +41,7 @@ extension AppModel {
                 setEnabled(true); setAutomatic(true); setShiftMode("both"); setNeverCorrect("")
                 Preferences.shared.exclusions = originalExclusions.split(whereSeparator: \.isNewline)
                     .filter { $0.trimmingCharacters(in: .whitespaces) != testEditorID }.joined(separator: "\n")
+                loadExclusions()
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LSwitcher-\(UUID().uuidString)")
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let marker = "LSwitcher test \(UUID().uuidString)"
@@ -92,6 +94,24 @@ extension AppModel {
                 testResults += "✓ Флаг скрывается после первого ввода\n"; checks += 1
 
                 guard let delegate = NSApp.delegate as? AppDelegate else { throw SmokeFailure.message("Нет делегата приложения") }
+                setEnabled(false)
+                guard operationStatus == .disabled, delegate.statusPresentationMatchesModel else {
+                    throw SmokeFailure.message("Статус выключения расходится в интерфейсе")
+                }
+                setEnabled(true); setAutomatic(false)
+                guard operationStatus == .manualOnly, delegate.statusPresentationMatchesModel else {
+                    throw SmokeFailure.message("Статус ручного режима расходится в интерфейсе")
+                }
+                setAutomatic(true)
+                engine.stop(); refresh()
+                guard operationStatus == .handlerUnavailable, delegate.statusPresentationMatchesModel else {
+                    throw SmokeFailure.message("Статус недоступного обработчика расходится в интерфейсе")
+                }
+                engine.start(); refresh()
+                guard operationStatus == .automatic, delegate.statusPresentationMatchesModel else {
+                    throw SmokeFailure.message("Статус доступности не восстановился")
+                }
+                testResults += "✓ Согласованные статусы меню и настроек\n"; checks += 1
                 for (sleep, wake, name) in [
                     (NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, "сон/пробуждение"),
                     (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, "блокировка/разблокировка")
@@ -99,12 +119,14 @@ extension AppModel {
                     let handler = engine.generation, status = delegate.statusGeneration
                     NSWorkspace.shared.notificationCenter.post(name: sleep, object: nil)
                     checkHealth()
-                    guard !engine.running, sessionSuspended, engine.generation == handler else {
+                    guard !engine.running, sessionSuspended, engine.generation == handler,
+                          operationStatus == .suspended else {
                         throw SmokeFailure.message("Обработчик не остановился на время сна")
                     }
                     NSWorkspace.shared.notificationCenter.post(name: wake, object: nil)
                     guard engine.running, !sessionSuspended, engine.generation > handler,
-                          delegate.statusGeneration > status, delegate.statusItemPresent else {
+                          delegate.statusGeneration > status, delegate.statusItemPresent,
+                          operationStatus != .suspended, delegate.statusPresentationMatchesModel else {
                         throw SmokeFailure.message("Не восстановились обработчик и значок")
                     }
                     testResults += "✓ Восстановление: \(name)\n"; checks += 1
@@ -130,8 +152,35 @@ extension AppModel {
 
                 try await press(51, field: field)
                 try await verify("Backspace отменяет автозамену", expected: "ghbdtn ")
+                guard let offered = engine.exclusionCandidate() else { throw SmokeFailure.message("После отмены нет предложения исключения") }
+                delegate.prepareWordExclusionMenu()
+                guard engine.exclusionCandidate()?.id == offered.id, delegate.performWordExclusionMenuAction(),
+                      Preferences.shared.protects("ghbdtn") else {
+                    throw SmokeFailure.message("Меню не сохранило слово после отмены")
+                }
+                testResults += "✓ Меню: слово после отмены добавлено явно\n"; checks += 1
                 try await press(51, field: field)
                 try await verify("Повторный Backspace удаляет символ", expected: "ghbdtn")
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await verify("Меню: сохранённое слово не исправляется автоматически", expected: "ghbdtn ")
+                try await shiftPair(right: true, field: field)
+                try await verify("Меню: ручной Shift доступен для сохранённого слова", expected: "привет ")
+                setNeverCorrect("")
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await press(51, field: field)
+                delegate.prepareWordExclusionMenu()
+                _ = engine.exclusionCandidate(at: ProcessInfo.processInfo.systemUptime + 60)
+                guard !delegate.performWordExclusionMenuAction(), neverCorrect.isEmpty else {
+                    throw SmokeFailure.message("Устаревший пункт меню сохранил слово")
+                }
+                testResults += "✓ Меню: просроченное предложение отклонено\n"; checks += 1
+                try await clear(field)
+                try await type("hello", field: field)
+                try await press(51, field: field)
+                guard engine.exclusionCandidate() == nil else { throw SmokeFailure.message("Обычный Backspace создал предложение") }
+                try await verify("Обычный Backspace не предлагает исключение", expected: "hell")
 
                 setNeverCorrect("GHBDTN")
                 try await clear(field)
@@ -174,18 +223,29 @@ extension AppModel {
                     try await verify(name, expected: expected)
                 }
 
-                Preferences.shared.exclusions += "\n" + testEditorID
+                guard delegate.performExclusionMenuAction(), excludedIDs.contains(testEditorID) else {
+                    throw SmokeFailure.message("Меню не добавило тестовый редактор в исключения")
+                }
+                guard case .excludedApplication = operationStatus else { throw SmokeFailure.message("Статус исключения не обновился") }
                 try await clear(field)
                 try await type("ghbdtn ", field: field)
-                try await verify("Автоисправление отключено исключением", expected: "ghbdtn ")
+                try await verify("Меню: автоисправление отключено исключением", expected: "ghbdtn ")
                 try await shiftPair(right: true, field: field)
                 try await verify("Ручное исправление в исключении и после пробела", expected: "привет ")
+                guard delegate.performExclusionMenuAction(), !excludedIDs.contains(testEditorID) else {
+                    throw SmokeFailure.message("Меню не сняло исключение тестового редактора")
+                }
+                try await clear(field)
+                try await type("ghbdtn ", field: field)
+                try await verify("Меню: снятие исключения возвращает автоисправление", expected: "привет ")
 
                 try await clear(field)
+                setAutomatic(false)
                 try await type("ghbdtn vbh", field: field)
                 try await selectAll(field)
                 try await shiftPair(right: true, field: field)
                 try await verify("Исправление выделенного текста", expected: "привет мир")
+                setAutomatic(true)
 
                 try await clear(field)
                 try await type("hello ", field: field)

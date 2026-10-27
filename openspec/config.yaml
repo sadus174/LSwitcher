@@ -1,0 +1,39 @@
+schema: spec-driven
+
+context: |
+  Language: Russian
+  All artifacts must be written in Russian.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  LSwitcher is a local macOS 13+ Swift 6 menu-bar utility for QWERTY/Russian layout correction.
+  Preserve automatic correction, manual double Shift, verified Backspace undo,
+  app/word exclusions, Secure Input protection, and bounded in-memory text handling.
+  Existing entry points: AppDelegate.swift (menu/lifecycle), AppModel.swift (settings/state),
+  main.swift (Preferences/KeyboardEngine), SettingsView.swift, LSwitcherCore/CorrectionUndo.swift.
+  Core validation uses swift run -c release LSwitcherChecks, not swift test.
+  Built-in smoke tests cover TextEdit, Safari and Chrome; restore user preferences after tests.
+  scripts/build-dmg.sh already supports SIGN_IDENTITY and NOTARY_PROFILE; refine and verify it.
+  Do not add timed pause. Spotlight has been tested by the user; preserve it without a new fix.
+  Keep runtime text out of logs, diagnostic exports and files; explicit personal exceptions are settings.
+  Release publication is separate from planning and implementation.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

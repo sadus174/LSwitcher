@@ -10,7 +10,8 @@ private let injectedEventTag: Int64 = 0x4C535749
 @MainActor
 final class Preferences {
     static let shared = Preferences()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
     var automatic: Bool {
         get { defaults.object(forKey: "automatic") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "automatic") }
@@ -53,6 +54,16 @@ final class KeyboardEngine {
     private var word = ""
     private var protectedToken = false
     private var undo: CorrectionUndo?
+    private var exclusionState = UndoExclusionState()
+    func exclusionCandidate(at time: Double = ProcessInfo.processInfo.systemUptime) -> UndoExclusionCandidate? {
+        if IsSecureEventInputEnabled() { exclusionState.clear() }
+        return exclusionState.current(at: time)
+    }
+    func clearExclusionCandidate() { exclusionState.clear() }
+    func observeExclusionContext(applicationID: String?, enabled: Bool, secureInput: Bool, suspended: Bool) {
+        exclusionState.observe(applicationID: applicationID, ownApplicationID: Bundle.main.bundleIdentifier,
+            enabled: enabled, secureInput: secureInput, suspended: suspended, time: ProcessInfo.processInfo.systemUptime)
+    }
     private var undoElement: AXUIElement?
     private var focusedElement: AXUIElement?
     private var lastPID: pid_t = 0
@@ -85,6 +96,7 @@ final class KeyboardEngine {
         return CFMachPortIsValid(tap) && CFRunLoopSourceIsValid(runLoopSource) && CGEvent.tapIsEnabled(tap: tap)
     }
     func stop() {
+        clearExclusionCandidate()
         reset()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes); CFRunLoopSourceInvalidate(runLoopSource) }
@@ -151,13 +163,15 @@ final class KeyboardEngine {
         eventsReceived += 1
         guard type == .keyDown || type == .flagsChanged else { reset(); return Unmanaged.passUnretained(event) }
         let preferences = Preferences.shared
+        if !preferences.enabled || IsSecureEventInputEnabled() { clearExclusionCandidate() }
         guard preferences.enabled, !IsSecureEventInputEnabled(),
               let app = AccessibilityFocus.keyboardApplication(timeout: 0.04),
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
-              !(app.bundleIdentifier ?? "").hasPrefix("com.1password."),
-              app.bundleIdentifier != "com.agilebits.onepassword7" else {
+              !InputProtection.protectsApplication(app.bundleIdentifier ?? "") else {
             reset(); return Unmanaged.passUnretained(event)
         }
+        observeExclusionContext(applicationID: app.bundleIdentifier, enabled: preferences.enabled,
+            secureInput: false, suspended: suspended)
         let code = event.getIntegerValueField(.keyboardEventKeycode)
         let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
         if type == .flagsChanged {
@@ -198,7 +212,7 @@ final class KeyboardEngine {
                             self.replace(count: self.word.count, with: replacement)
                             self.selectLayout(for: replacement)
                             self.word = ""
-                            self.manualCorrections += 1
+                            self.clearExclusionCandidate(); self.manualCorrections += 1
                             self.diagnostic = "Ручное исправление отправлено"
                         } else if let element = self.focusedInput(for: current) {
                             self.inputTarget = AccessibilityFocus.description(app: current, element: element)
@@ -236,6 +250,8 @@ final class KeyboardEngine {
             selectLayout(for: pending.original)
             word = ""; protectedToken = false
             diagnostic = "Автоисправление отменено"
+            exclusionState.offer(word: pending.original, applicationID: app.bundleIdentifier ?? "",
+                time: ProcessInfo.processInfo.systemUptime)
             return nil
         }
         undo = nil; undoElement = nil
@@ -273,7 +289,7 @@ final class KeyboardEngine {
                     undo = CorrectionUndo(original: word, replacement: replacement, delimiter: " ",
                         caret: edit.caret, time: ProcessInfo.processInfo.systemUptime)
                     undoElement = element
-                    automaticCorrections += 1
+                    clearExclusionCandidate(); automaticCorrections += 1
                     diagnostic = "Поиск: автоисправление одной операцией"
                     selectLayout(for: replacement)
                     word = ""; protectedToken = false
@@ -289,7 +305,7 @@ final class KeyboardEngine {
                     undoElement = element
                 }
                 replace(count: word.count, with: replacement)
-                automaticCorrections += 1
+                clearExclusionCandidate(); automaticCorrections += 1
                 diagnostic = undo == nil ? "Автоисправление отправлено" : "Автоисправление отправлено · Backspace отменяет"
                 event.setIntegerValueField(.eventSourceUserData, value: injectedEventTag)
                 event.post(tap: .cghidEventTap)
@@ -326,7 +342,7 @@ final class KeyboardEngine {
             word = ""; return
         }
         selectLayout(for: edit.replacement)
-        manualCorrections += 1
+        clearExclusionCandidate(); manualCorrections += 1
         diagnostic = "Поиск: ручное исправление одной операцией"
         word = ""; protectedToken = false
     }
@@ -372,7 +388,7 @@ final class KeyboardEngine {
             replace(count: word.count, with: replacement)
             selectLayout(for: replacement)
         } else { diagnostic = "Нет выделения или слова перед курсором"; NSSound.beep(); return }
-        manualCorrections += 1
+        clearExclusionCandidate(); manualCorrections += 1
         diagnostic = "Ручное исправление отправлено"
         word = ""
     }
@@ -449,6 +465,23 @@ final class KeyboardEngine {
             if languages.contains(language) { TISSelectInputSource(source); return }
         }
     }
+}
+
+if CommandLine.arguments.contains("--check-preferences") {
+    try checkExclusionPreferences()
+    exit(0)
+}
+if CommandLine.arguments.contains("--check-exclusion-menu") {
+    try checkExclusionMenu()
+    exit(0)
+}
+if CommandLine.arguments.contains("--check-login-launch") {
+    try checkLoginLaunch()
+    exit(0)
+}
+if let probe = CommandLine.arguments.firstIndex(of: "--probe-exclusions"), CommandLine.arguments.count == probe + 2 {
+    try probeExclusionPreferences(suite: CommandLine.arguments[probe + 1])
+    exit(0)
 }
 
 // A per-user advisory lock is atomic even when two copies launch together.

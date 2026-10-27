@@ -37,6 +37,57 @@ let coldLoadMilliseconds = Double(DispatchTime.now().uptimeNanoseconds-coldStart
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else { fatalError(message) }
 }
+func status(enabled: Bool = true, suspended: Bool = false, permissions: Bool = true,
+            secure: Bool = false, running: Bool = true, protected: Bool = false,
+            excluded: Bool = false, field: FieldAvailability = .editable, automatic: Bool = true) -> OperationStatus {
+    .resolve(enabled: enabled, suspended: suspended, permissions: permissions, secureInput: secure,
+             running: running, protectedApplication: protected, excluded: excluded,
+             applicationName: "Editor", field: field, automatic: automatic)
+}
+expect(status(enabled: false, suspended: true, permissions: false) == .disabled, "Disabled takes priority")
+expect(status(suspended: true, permissions: false) == .suspended, "Session suspension precedes permissions")
+expect(status(permissions: false, secure: true) == .permissionsRequired, "Permissions precede Secure Input")
+expect(status(secure: true, running: false) == .secureInput, "Secure Input precedes handler")
+expect(status(running: false, excluded: true) == .handlerUnavailable, "Handler precedes app exclusion")
+expect(status(protected: true, excluded: true) == .protectedTarget, "Protected application cannot be enabled through exclusions")
+expect(status(excluded: true, field: .unknown) == .excludedApplication("Editor"), "Excluded app has its own reason")
+expect(status(field: .unknown, automatic: false) == .fieldUnknown, "Unknown field must not promise manual support")
+expect(status(field: .unsupported) == .fieldUnsupported, "Unsupported field")
+expect(status(field: .protected) == .protectedTarget, "Secure field")
+expect(status(automatic: false) == .manualOnly && status() == .automatic, "Manual and automatic modes")
+expect(InputProtection.protectsApplication("com.1password.1password"), "1Password remains protected")
+expect(InputProtection.protectsApplication("com.agilebits.onepassword7"), "Legacy 1Password remains protected")
+expect(!InputProtection.protectsApplication("com.example.editor"), "Normal editor is not protected")
+var offer = UndoExclusionState()
+expect(offer.current(at: 0) == nil, "No offer without undo")
+offer.offer(word: "ghbdtn", applicationID: "editor", time: 10)
+let firstOffer = offer.current(at: 10)!
+expect(offer.current(at: 69.999)?.id == firstOffer.id, "Offer lasts less than 60 seconds")
+expect(offer.current(at: 70) == nil, "Offer expires at 60 seconds")
+for event in ["other-app", "unknown-app", "disabled", "secure-input", "suspended", "correction", "exit"] {
+    offer.offer(word: "ghbdtn", applicationID: "editor", time: 10)
+    if event == "correction" || event == "exit" { offer.clear() }
+    else { offer.observe(applicationID: event == "other-app" ? "other" : event == "unknown-app" ? nil : "editor",
+                         ownApplicationID: "self", enabled: event != "disabled", secureInput: event == "secure-input",
+                         suspended: event == "suspended", time: 11) }
+    expect(offer.current(at: 11) == nil, "Offer clears for \(event)")
+}
+offer.offer(word: "ghbdtn", applicationID: "editor", time: 10)
+offer.observe(applicationID: "self", ownApplicationID: "self", enabled: true, secureInput: false, suspended: false, time: 11)
+expect(offer.current(at: 11) != nil, "Opening own menu/settings does not clear offer")
+offer.offer(word: "new", applicationID: "editor", time: 12)
+expect(offer.current(at: 12)?.word == "new" && offer.current(at: 12)?.id != firstOffer.id, "Only latest offer survives")
+expect(offer.current(at: 9) == nil, "Backwards clock invalidates offer")
+expect(UndoExclusionCandidate(word: "two words", applicationID: "editor", time: 0) == nil, "Invalid offer words")
+expect(PersonalWords.adding("GHBDTN", to: "hello") == .added("hello\nghbdtn"), "Explicit addition normalizes case")
+expect(PersonalWords.adding("Ghbdtn", to: "GHBDTN") == .alreadyPresent, "No duplicate exception")
+let fullWords = (0..<5000).map { "entry\($0)" }.joined(separator: "\n")
+expect(PersonalWords.adding("new", to: fullWords) == .limitReached, "Full dictionary keeps all old words")
+let duplicateLines = String(repeating: "hello\n", count: 5000) + "other"
+expect(PersonalWords.normalized(duplicateLines).contains("other"), "Limit counts unique words")
+expect(PersonalWords.adding(String(repeating: "a", count: 81), to: "hello") == .invalidWord, "Word length limit")
+expect(PersonalWords.adding("a\u{0}b", to: "") == .invalidWord, "Control characters rejected")
+expect(PersonalWords.adding("new", to: String(repeating: " ", count: 100_000)) == .limitReached, "No silent settings truncation")
 expect(LayoutPresentation(language: "ru-RU", sourceID: "").code == "RU", "Russian status code")
 expect(LayoutPresentation(language: "en", sourceID: "com.apple.keylayout.British").flag == "🇬🇧", "British keyboard flag")
 expect(LayoutPresentation(language: "en", sourceID: "com.apple.keylayout.US").flag == "🇺🇸", "English keyboard flag")

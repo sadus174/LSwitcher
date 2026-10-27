@@ -20,12 +20,33 @@ public struct CorrectionUndo {
 }
 
 public enum PersonalWords {
+    public static func validWord(_ word: String) -> Bool {
+        !word.isEmpty && word.count <= 80 && !word.contains(where: \.isWhitespace)
+            && !word.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+    }
     public static func normalized(_ text: String) -> Set<String> {
-        Set(text.split(whereSeparator: \.isNewline).map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping.lowercased()
-        }.filter { !$0.isEmpty && $0.count <= 80 && !$0.contains(where: \.isWhitespace) }.prefix(5000))
+        var words = Set<String>()
+        for line in text.split(whereSeparator: \.isNewline) {
+            let word = line.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping.lowercased()
+            if validWord(word) { words.insert(word) }
+            if words.count == 5000 { break }
+        }
+        return words
     }
     public static func contains(_ word: String, in words: Set<String>) -> Bool {
         words.contains(word.precomposedStringWithCanonicalMapping.lowercased())
+    }
+    public enum Addition: Equatable {
+        case added(String), alreadyPresent, invalidWord, limitReached
+    }
+    public static func adding(_ word: String, to text: String) -> Addition {
+        let word = word.precomposedStringWithCanonicalMapping.lowercased()
+        guard validWord(word) else { return .invalidWord }
+        let words = normalized(text)
+        if words.contains(word) { return .alreadyPresent }
+        guard words.count < 5000 else { return .limitReached }
+        let updated = text + (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + word
+        guard updated.count <= 100_000 else { return .limitReached }
+        return .added(updated)
     }
 }

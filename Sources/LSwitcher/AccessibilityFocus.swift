@@ -1,8 +1,22 @@
 @preconcurrency import ApplicationServices
 import Foundation
 import AppKit
+import LSwitcherCore
 
 enum AccessibilityFocus {
+    /// Availability probes inspect roles and writability, never the field value.
+    static func availability(app: NSRunningApplication) -> FieldAvailability {
+        guard let element = element(app: app, timeout: 0.04).element else { return .unknown }
+        var role: CFTypeRef?, subrole: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success else { return .unknown }
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+        if subrole as? String == "AXSecureTextField" { return .protected }
+        guard let role = role as? String else { return .unknown }
+        guard ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"].contains(role) else { return .unsupported }
+        var writable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &writable) == .success else { return .unknown }
+        return writable.boolValue ? .editable : .unknown
+    }
     @MainActor private static var preparedChromium = Set<pid_t>()
     @MainActor static func resetPreparation() { preparedChromium.removeAll() }
     @MainActor static func prepare(_ app: NSRunningApplication?) {

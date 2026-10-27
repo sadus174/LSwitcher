@@ -4,16 +4,23 @@ import Carbon
 import LSwitcherCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var model: AppModel!
     private var statusItem: NSStatusItem!
     private var window: NSWindow?
     private var enabledItem: NSMenuItem!
     private var autoItem: NSMenuItem!
+    private var exclusionMenu: AppExclusionMenu!
+    private var operationStatusItem: NSMenuItem!
+    private var wordExclusionMenu: WordExclusionMenu!
     private var defaultStatusImage: NSImage?
     private var recoveryTask: Task<Void, Never>?
     private(set) var statusGeneration = 1
     var statusItemPresent: Bool { statusItem?.isVisible == true && statusItem?.button != nil && statusItem?.menu != nil }
+    var statusPresentationMatchesModel: Bool {
+        operationStatusItem?.title == model.operationStatus.message
+            && statusItem?.button?.toolTip?.hasSuffix(model.operationStatus.message) == true
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -40,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = image
         let menu = NSMenu()
         menu.addItem(withTitle: "LSwitcher", action: nil, keyEquivalent: "")
+        operationStatusItem = menu.addItem(withTitle: model.operationStatus.message, action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         enabledItem = menu.addItem(withTitle: "Переключение включено", action: #selector(toggleEnabled), keyEquivalent: "")
         autoItem = menu.addItem(withTitle: "Автоисправление", action: #selector(toggleAutomatic), keyEquivalent: "")
@@ -48,12 +56,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "О программе…", action: #selector(showAbout), keyEquivalent: "")
         menu.addItem(withTitle: "Выход", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
+        exclusionMenu = AppExclusionMenu(model: model)
+        menu.insertItem(exclusionMenu.item, at: 5)
+        wordExclusionMenu = WordExclusionMenu(model: model)
+        menu.insertItem(wordExclusionMenu.item, at: 6)
+        menu.delegate = self
         statusItem.menu = menu
         model.changed = { [weak self] in self?.refreshMenu() }
         refreshMenu()
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(layoutChanged),
             name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
-        showSettings()
+        if !LaunchReason.isLoginLaunch(NSAppleEventManager.shared().currentAppleEvent) { showSettings() }
         NotificationCenter.default.addObserver(self, selector: #selector(screenChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(systemAppLaunched), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(applicationChanged),
@@ -65,7 +78,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: name, object: nil)
         }
     }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { recreateStatusItem(); model.retry(); showSettings(); return true }
+    func menuWillOpen(_ menu: NSMenu) {
+        exclusionMenu.prepare(application: AccessibilityFocus.keyboardApplication(timeout: 0.04))
+        model.refresh()
+        wordExclusionMenu.prepare()
+    }
+    /// Run the actual menu preparation and action against the focused disposable editor.
+    func performExclusionMenuAction() -> Bool {
+        guard let menu = statusItem?.menu else { return false }
+        menuWillOpen(menu)
+        guard exclusionMenu.validateMenuItem(exclusionMenu.item) else { return false }
+        menu.performActionForItem(at: menu.index(of: exclusionMenu.item))
+        return true
+    }
+    func prepareWordExclusionMenu() {
+        if let menu = statusItem?.menu { menuWillOpen(menu) }
+    }
+    func performWordExclusionMenuAction() -> Bool {
+        guard let menu = statusItem?.menu, wordExclusionMenu.validateMenuItem(wordExclusionMenu.item) else { return false }
+        menu.performActionForItem(at: menu.index(of: wordExclusionMenu.item))
+        return true
+    }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        recreateStatusItem()
+        if !model.engine.running { model.retry() } else { model.refresh() }
+        showSettings()
+        return true
+    }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model?.loginLaunch.refresh()
+    }
     private func installEditMenu() {
         let menu = NSMenu()
         let appItem = NSMenuItem()
@@ -85,6 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshMenu() {
         enabledItem?.state = model.enabled ? .on : .off
         autoItem?.state = model.automatic ? .on : .off
+        operationStatusItem?.title = model.operationStatus.message
+        wordExclusionMenu?.refreshAvailability()
         statusItem?.button?.appearsDisabled = !model.enabled || !model.ready
         guard let button = statusItem?.button else { return }
         let layout = CurrentLayout.presentation
@@ -102,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.font = .systemFont(ofSize: 17)
         }
         button.setAccessibilityLabel("LSwitcher · \(layout.code)")
-        button.toolTip = model.ready ? "LSwitcher · \(layout.code) · Shift × 2" : "LSwitcher · \(layout.code) · Проверьте разрешения"
+        button.toolTip = "LSwitcher · \(layout.code) · \(model.operationStatus.message)"
     }
     @objc private func layoutChanged() { refreshMenu(); model.focusHint.refresh() }
     private func recreateStatusItem() {
@@ -140,7 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               app.bundleIdentifier == "com.apple.systemuiserver" else { return }
         recreateStatusItem()
     }
-    @objc private func applicationChanged() { model.engine.reset(); model.focusHint.reset(); AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication) }
+    @objc private func applicationChanged() {
+        model.engine.reset(); model.focusHint.reset()
+        AccessibilityFocus.prepare(NSWorkspace.shared.frontmostApplication)
+        model.refresh()
+    }
     @objc private func toggleEnabled() { model.setEnabled(!model.enabled) }
     @objc private func toggleAutomatic() { model.setAutomatic(!model.automatic) }
     @objc private func showAbout() { model.page = .about; showSettings() }
