@@ -6,7 +6,7 @@ import LSwitcherCore
 final class Updates: ObservableObject {
     static let repository = URL(string: "https://github.com/sadus174/LSwitcher")!
     static let releases = repository.appendingPathComponent("releases/latest")
-    static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.7.0" }
+    static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.7.1" }
     @Published private(set) var checking = false
     @Published private(set) var message = "Проверьте, доступна ли новая версия."
     @Published private(set) var available = false

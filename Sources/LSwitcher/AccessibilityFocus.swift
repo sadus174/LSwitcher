@@ -21,7 +21,7 @@ enum AccessibilityFocus {
     @MainActor static func resetPreparation() { preparedChromium.removeAll() }
     @MainActor static func prepare(_ app: NSRunningApplication?) {
         guard AXIsProcessTrusted(), let app, app.processIdentifier > 0,
-              ["com.google.Chrome", "org.chromium.Chromium", "com.microsoft.edgemac", "com.brave.Browser", "com.termius-dmg.mac", "com.termius.mac"].contains(app.bundleIdentifier ?? ""),
+              ["com.google.Chrome", "org.chromium.Chromium", "com.microsoft.edgemac", "com.brave.Browser", "com.termius-dmg.mac", "com.termius.mac", "com.openai.codex"].contains(app.bundleIdentifier ?? ""),
               !preparedChromium.contains(app.processIdentifier) else { return }
         let root = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(root, 0.1)
